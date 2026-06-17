@@ -22,9 +22,31 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
         self.end_headers()
 
+    def _get_mime_type(self, path):
+        ext = os.path.splitext(path)[1].lower()
+        return {
+            '.html': 'text/html',
+            '.css': 'text/css',
+            '.js': 'application/javascript',
+            '.json': 'application/json',
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.gif': 'image/gif',
+            '.svg': 'image/svg+xml',
+            '.ico': 'image/x-icon',
+            '.woff': 'font/woff',
+            '.woff2': 'font/woff2',
+        }.get(ext, 'application/octet-stream')
+
     def do_GET(self):
         if self.path == '/' or self.path == '/index.html':
             self._serve_static_file('index.html', 'text/html')
+        elif self.path.startswith('/css/') or self.path.startswith('/js/') or self.path.startswith('/tabs/'):
+            # Strip leading slash and serve from the dashboard directory
+            relative_path = self.path.lstrip('/')
+            content_type = self._get_mime_type(self.path)
+            self._serve_static_file(relative_path, content_type)
         elif self.path == '/api/status':
             self._send_json(self._get_status())
         elif self.path == '/api/trades':
@@ -39,6 +61,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._export_csv()
         elif self.path == '/api/export/json':
             self._export_json()
+        elif self.path.startswith('/api/candles'):
+            self._get_candles()
+        elif self.path == '/api/trades/all':
+            self._send_json(self._get_all_trades())
+        elif self.path == '/api/risk/snapshot':
+            self._send_json(self._get_risk_snapshot())
+        elif self.path == '/api/orders':
+            self._send_json(self._get_orders())
+        elif self.path == '/api/events':
+            self._send_json(self._get_events())
         else:
             self.send_error(404, 'File Not Found')
 
@@ -55,6 +87,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._send_json({"status": "ok", "message": "Emergency stop triggered"})
             else:
                 self.send_error(500, "Bot instance not loaded")
+        elif self.path.startswith('/api/close'):
+            if self.path == '/api/close/all':
+                self._close_all_positions()
+            else:
+                self._close_position()
         elif self.path == '/api/settings':
             content_length = int(self.headers.get('Content-Length', 0))
             post_data = self.rfile.read(content_length).decode('utf-8')
@@ -610,6 +647,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if "meta_labeling" in settings_data:
             current_config["meta_labeling"] = settings_data["meta_labeling"]
 
+        # Handle mode switch (paper/live)
+        mode_switched = False
+        if "mode" in settings_data:
+            new_mode = settings_data["mode"]
+            if new_mode in ("paper", "live"):
+                old_mode = current_config.get("bot", {}).get("mode", "paper")
+                current_config.setdefault("bot", {})["mode"] = new_mode
+                self.bot.config.setdefault("bot", {})["mode"] = new_mode
+                self.bot.paper_trading = (new_mode == "paper")
+                mode_switched = True
+                logger.warning(f" MODE SWITCHED: {old_mode} → {new_mode} | paper_trading={self.bot.paper_trading}")
+
         # 3. Write back to config/settings.yaml
         with open(config_path, 'w', encoding='utf-8') as f:
             yaml.dump(current_config, f, default_flow_style=False)
@@ -710,6 +759,274 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.bot.position_sizer = first_state.get("position_sizer")
             
         logger.info("Trading bot settings updated and reloaded in memory.")
+
+    # ── NEW ENDPOINTS ─────────────────────────────────────────────
+
+    def _parse_qs(self):
+        """Parse query string from self.path into a dict."""
+        qs = {}
+        if '?' in self.path:
+            for part in self.path.split('?', 1)[1].split('&'):
+                if '=' in part:
+                    k, v = part.split('=', 1)
+                    qs[k] = v
+        return qs
+
+    def _get_candles(self):
+        """GET /api/candles?symbol=BTC/USDT:USDT&timeframe=1h&limit=50"""
+        if not self.bot:
+            self._send_json({"error": "Bot not initialized"}); return
+        qs = self._parse_qs()
+        symbol = qs.get('symbol', self.bot.symbols[0] if self.bot.symbols else '')
+        tf = qs.get('timeframe', '1h')
+        limit = int(qs.get('limit', 50))
+
+        try:
+            state = self.bot.symbol_states.get(symbol)
+            if state and 'feature_engine' in state:
+                fe = state['feature_engine']
+                if hasattr(fe, '_cache') and tf in fe._cache:
+                    df = fe._cache[tf]
+                    if df is not None and len(df):
+                        records = df.tail(limit)[['timestamp','open','high','low','close','volume']].to_dict('records')
+                        # Convert timestamps to int
+                        for r in records:
+                            if hasattr(r['timestamp'], 'value'):
+                                r['timestamp'] = int(r['timestamp'].value // 1e6)  # ns to ms
+                            elif isinstance(r['timestamp'], (int, float)):
+                                r['timestamp'] = int(r['timestamp'])
+                        self._send_json(records)
+                        return
+            # Fallback: try REST client
+            if hasattr(self.bot, 'rest_client'):
+                candles = self.bot.rest_client.fetch_recent(tf, hours=limit)
+                if candles:
+                    self._send_json(candles[-limit:])
+                    return
+            self._send_json([])
+        except Exception as e:
+            logger.error(f"Candles error: {e}")
+            self._send_json([])
+
+    def _get_all_trades(self):
+        """GET /api/trades/all — return all closed trades."""
+        import sqlite3
+        db_path = self.bot.config.get("data", {}).get("database", {}).get("path", "./data/trading.db") if self.bot else "./data/trading.db"
+        if not os.path.exists(db_path):
+            return []
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT entry_time, exit_time, side, entry_price, exit_price, quantity, pnl, pnl_pct, strategy, exit_reason, theoretical_entry_price, theoretical_exit_price FROM trades WHERE exit_time IS NOT NULL ORDER BY exit_time ASC")
+            rows = cursor.fetchall()
+            trades = [dict(row) for row in rows]
+            conn.close()
+            return trades
+        except Exception as e:
+            logger.error(f"Error querying all trades: {e}")
+            return []
+
+    def _get_risk_snapshot(self):
+        """GET /api/risk/snapshot — full risk dashboard data."""
+        if not self.bot:
+            self._send_json({"error": "Bot not initialized"}); return
+
+        data = {"risk": {}, "breaker": {}, "equity_history": [], "correlation": {}}
+
+        # Risk monitor
+        if hasattr(self.bot, 'risk_monitor'):
+            try:
+                data["risk"] = self.bot.risk_monitor.snapshot()
+            except: pass
+
+        # Circuit breaker
+        if hasattr(self.bot, 'circuit_breaker'):
+            try:
+                data["breaker"] = self.bot.circuit_breaker.get_snapshot()
+            except:
+                data["breaker"] = {"state": "UNKNOWN"}
+
+        # Performance history (from DB)
+        import sqlite3, time
+        db_path = self.bot.config.get("data", {}).get("database", {}).get("path", "./data/trading.db") if self.bot else "./data/trading.db"
+        if os.path.exists(db_path):
+            try:
+                conn = sqlite3.connect(db_path)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='performance_snapshots'")
+                if cursor.fetchone():
+                    cutoff = int((time.time() - 90*86400) * 1000)
+                    cursor.execute("SELECT timestamp, equity, drawdown_pct, sharpe_rolling FROM performance_snapshots WHERE timestamp >= ? ORDER BY timestamp ASC", (cutoff,))
+                    rows = cursor.fetchall()
+                    if rows:
+                        data["equity_history"] = [dict(r) for r in rows]
+                # Fallback: build equity curve from trades
+                if not data["equity_history"]:
+                    cursor.execute("SELECT exit_time, pnl FROM trades WHERE exit_time IS NOT NULL ORDER BY exit_time ASC")
+                    trades = cursor.fetchall()
+                    initial = self.bot.initial_capital if hasattr(self.bot, 'initial_capital') else 10000
+                    equity = initial
+                    peak = initial
+                    history = [{"timestamp": int(time.time()*1000) - 90*86400000, "equity": initial, "drawdown_pct": 0}]
+                    for t in trades:
+                        equity += t["pnl"] or 0
+                        peak = max(peak, equity)
+                        dd = ((peak - equity) / peak * 100) if peak > 0 else 0
+                        history.append({"timestamp": t["exit_time"], "equity": round(equity, 2), "drawdown_pct": round(dd, 2)})
+                    if len(history) > 1:
+                        data["equity_history"] = history
+                conn.close()
+            except Exception as e:
+                logger.error(f"Risk snapshot DB error: {e}")
+
+        # Correlation matrix
+        try:
+            pairs = getattr(self.bot, 'high_corr_pairs', {})
+            symbols = [s.split('/')[0] for s in self.bot.symbols[:5]]
+            corr = {}
+            for s in symbols:
+                corr[s] = {s: 1.0}
+            for (s1, s2), val in pairs.items():
+                a, b = s1.split('/')[0], s2.split('/')[0]
+                if a in corr: corr[a][b] = val
+                if b in corr: corr[b][a] = val
+            data["correlation"] = {"symbols": symbols, "matrix": corr}
+        except: pass
+
+        return data
+
+    def _get_orders(self):
+        """GET /api/orders — list open/pending orders from exchange, or paper positions as fallback."""
+        if not self.bot:
+            return {"orders": [], "error": "Bot not initialized"}
+        orders = []
+        try:
+            if hasattr(self.bot, 'exchange') and self.bot.exchange and not self.bot.paper_trading:
+                for symbol in self.bot.symbols:
+                    try:
+                        open_orders = self.bot.exchange.fetch_open_orders(symbol)
+                        for o in open_orders:
+                            orders.append({
+                                "id": o.get("id", ""),
+                                "symbol": symbol,
+                                "side": o.get("side", "").upper(),
+                                "type": o.get("type", ""),
+                                "price": o.get("price", 0) or 0,
+                                "amount": o.get("amount", 0),
+                                "filled": o.get("filled", 0),
+                                "remaining": o.get("remaining", 0),
+                                "status": o.get("status", ""),
+                                "timestamp": o.get("timestamp", 0) or 0,
+                            })
+                    except Exception:
+                        pass
+            # Fallback: show paper positions as "pending orders" for visibility in UI
+            if not orders:
+                for sym, state in self.bot.symbol_states.items():
+                    open_pos = state.get("open_positions", {})
+                    for side, pos in open_pos.items():
+                        orders.append({
+                            "id": f"paper_{sym}_{side}",
+                            "symbol": sym,
+                            "side": side.upper(),
+                            "type": "limit",
+                            "price": pos.get("entry_price", 0),
+                            "amount": pos.get("size", 0),
+                            "filled": pos.get("size", 0),
+                            "remaining": 0,
+                            "status": "filled" if self.bot.paper_trading else "open",
+                            "timestamp": pos.get("ts", 0),
+                        })
+        except Exception as e:
+            return {"orders": [], "error": str(e)}
+        return {"orders": orders}
+
+    def _get_events(self):
+        """GET /api/events — recent trading events (signals, trades, breaker trips)."""
+        import sqlite3, time
+        events = []
+        try:
+            db_cfg = self.bot.config.get("data", {}) if self.bot else {}
+            if isinstance(db_cfg, dict):
+                db_path = db_cfg.get("database", {}).get("path", "./data/trading.db") if isinstance(db_cfg.get("database", {}), dict) else "./data/trading.db"
+            else:
+                db_path = "./data/trading.db"
+        except Exception:
+            db_path = "./data/trading.db"
+        if not os.path.exists(db_path):
+            return events
+
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            logger.info(f"Events: opened DB at {db_path}")
+
+            # Recent trades (closed positions)
+            cursor.execute("SELECT exit_time, side, pnl, pnl_pct, strategy, exit_reason FROM trades WHERE exit_time IS NOT NULL ORDER BY exit_time DESC LIMIT 30")
+            trade_rows = cursor.fetchall()
+            logger.info(f"Events: found {len(trade_rows)} trades")
+            for r in trade_rows:
+                sym = (r["strategy"] or "").split(":")[1] if ":" in (r["strategy"] or "") else ""
+                events.append({
+                    "time": r["exit_time"],
+                    "type": "trade",
+                    "icon": "✅" if (r["pnl"] or 0) >= 0 else "❌",
+                    "msg": f"{sym} {r['side'].upper()} zamknięta ({r['exit_reason'] or '?'})",
+                    "detail": f"PnL: {'+' if (r['pnl'] or 0) >= 0 else ''}${(r['pnl'] or 0):.2f}",
+                    "pnl": r["pnl"] or 0
+                })
+
+            # Recent signals
+            cursor.execute("SELECT timestamp, strategy, signal, confidence, executed, reject_reason FROM signals ORDER BY timestamp DESC LIMIT 20")
+            sig_rows = cursor.fetchall()
+            logger.info(f"Events: found {len(sig_rows)} signals")
+            for r in sig_rows:
+                sym = (r["strategy"] or "").split(":")[1] if ":" in (r["strategy"] or "") else ""
+                executed = r["executed"]
+                events.append({
+                    "time": r["timestamp"],
+                    "type": "signal",
+                    "icon": "🔵" if executed else "⚪",
+                    "msg": f"{sym} sygnał {r['signal'].upper()}" + (" — wykonany" if executed else f" — odrzucony ({r['reject_reason'] or '?'})"),
+                    "detail": f"Confidence: {(r['confidence'] or 0):.2f}",
+                    "pnl": 0
+                })
+
+            conn.close()
+        except Exception as e:
+            logger.error(f"Events error: {e}")
+
+        # Sort by time descending
+        events.sort(key=lambda x: x.get("time", 0), reverse=True)
+        return events[:40]
+
+    def _close_position(self):
+        """GET /api/close?symbol=BTC/USDT:USDT&side=long — manually close a specific position."""
+        if not self.bot:
+            self.send_error(500, "Bot instance not loaded"); return
+        qs = self._parse_qs()
+        symbol = qs.get("symbol", "")
+        side = qs.get("side", "")
+        if not symbol or not side:
+            self.send_error(400, "Missing symbol or side"); return
+        try:
+            result = self.bot.close_position_manual(symbol, side)
+            self._send_json(result)
+        except Exception as e:
+            self.send_error(500, str(e))
+
+    def _close_all_positions(self):
+        """POST /api/close/all — close all open positions."""
+        if not self.bot:
+            self.send_error(500, "Bot instance not loaded"); return
+        try:
+            result = self.bot.close_all_positions()
+            self._send_json(result)
+        except Exception as e:
+            self.send_error(500, str(e))
 
 class ThreadingHTTPServer(ThreadingTCPServer):
     allow_reuse_address = True

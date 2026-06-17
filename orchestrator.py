@@ -151,6 +151,11 @@ class TradingBot:
         # Risk (global)
         self.circuit_breaker = CircuitBreaker(self.config)
         self.risk_monitor = RiskMonitor(self.config)
+        self.high_corr_pairs = {
+            ("BTC/USDT:USDT", "ETH/USDT:USDT"): 0.48,
+            ("BTC/USDT:USDT", "LTC/USDT:USDT"): 0.48,
+            ("BTC/USDT:USDT", "SOL/USDT:USDT"): 0.44,
+        }
         
         # State
         self.running = False
@@ -470,18 +475,13 @@ class TradingBot:
             # ── Correlation risk check ──────────────────────
             # Warn when high-correlation pairs are simultaneously in position.
             # Conditional correlations from multi-asset backtest (OOS, 2023-2026):
-            HIGH_CORR_PAIRS = {
-                ("BTC/USDT:USDT", "ETH/USDT:USDT"): 0.48,
-                ("BTC/USDT:USDT", "LTC/USDT:USDT"): 0.48,
-                ("BTC/USDT:USDT", "SOL/USDT:USDT"): 0.44,
-            }
             symbols_in_position = set()
             for sym, sym_state in self.symbol_states.items():
                 if sym_state["open_positions"]:
                     symbols_in_position.add(sym)
 
             if symbol not in symbols_in_position:  # Only check when about to enter
-                for (s1, s2), corr in HIGH_CORR_PAIRS.items():
+                for (s1, s2), corr in self.high_corr_pairs.items():
                     if symbol in (s1, s2):
                         other = s2 if symbol == s1 else s1
                         if other in symbols_in_position:
@@ -678,13 +678,16 @@ class TradingBot:
             f"Slippage: Entry={entry_slippage_bps:+.1f} bps, Exit={exit_slippage_bps:+.1f} bps, Total={total_slippage_bps:+.1f} bps | "
             f"Equity=${self.equity:.2f}"
         )
-        if abs(pnl) > 50 or not self.paper_trading:
-            self.telegram.alert(
-                f"{emoji} {symbol} {side.upper()} closed ({reason}): ${pnl:.2f}\n"
-                f"Entry: {entry_price:.2f} → Exit: {exit_price:.2f}\n"
-                f"Slippage: Entry={entry_slippage_bps:+.1f} bps, Exit={exit_slippage_bps:+.1f} bps, Total={total_slippage_bps:+.1f} bps\n"
-                f"Equity: ${self.equity:.2f}"
-            )
+        sym_short = symbol.split("/")[0]
+        reason_pl = {"take_profit": "Take Profit", "trailing_stop": "Trailing Stop", "atr_stop": "ATR Stop", "time_exit": "Czasowe", "signal": "Sygnał"}.get(reason, reason)
+        pnl_emoji = "✅" if pnl > 0 else "❌"
+        side_emoji = "🟢" if side == "long" else "🔴"
+        self.telegram.alert(
+            f"{pnl_emoji} *{sym_short} {side.upper()} ZAMKNIĘTA* ({reason_pl})\n\n"
+            f"💰 *PnL:* `{'+' if pnl > 0 else ''}${pnl:,.2f}` _({pnl_pct:+.2f}%)_\n"
+            f"📥 *Wejście:* `${entry_price:,.2f}` → *Wyjście:* `${exit_price:,.2f}`\n"
+            f"💵 *Equity:* `${self.equity:,.2f}`"
+        )
         self.trade_repo.insert({
             "entry_time": pos["ts"],
             "exit_time": candle["timestamp"],
@@ -764,6 +767,22 @@ class TradingBot:
             "signal": signal.value,
             "executed": True,
         })
+
+        # Telegram alert for position open
+        sym_short = symbol.split("/")[0]
+        sl_price = state["position_tracker"].position.stop_loss
+        tp_price = state["position_tracker"].position.take_profit
+        sl_pct = abs(entry_price - sl_price) / entry_price * 100 if entry_price > 0 else 0
+        tp_pct = abs(tp_price - entry_price) / entry_price * 100 if entry_price > 0 else 0
+        side_emoji = "🟢" if side == "long" else "🔴"
+        self.telegram.alert(
+            f"{side_emoji} *{sym_short} {side.upper()} OTWARTA*\n\n"
+            f"💰 *Cena wejścia:* `${entry_price:,.2f}`\n"
+            f"📦 *Rozmiar:* `{executed_size:.6f}`\n"
+            f"🛑 *Stop Loss:* `${sl_price:,.2f}` _({sl_pct:.1f}%)_\n"
+            f"🎯 *Take Profit:* `${tp_price:,.2f}` _({tp_pct:.1f}%)_\n\n"
+            f"💵 *Equity:* `${self.equity:,.2f}`"
+        )
     
     def _log_risk_snapshot(self):
         """Periodically log risk metrics (every hour)."""
@@ -780,6 +799,31 @@ class TradingBot:
                 f"Trades={snap['trade_count']} WR={snap['win_rate']}%"
             )
     
+    def close_position_manual(self, symbol: str, side: str):
+        """Manually close a specific position (called from dashboard)."""
+        import time, copy
+        side = side.lower()
+        state = self.symbol_states.get(symbol)
+        if not state or side not in state.get("open_positions", {}):
+            return {"ok": False, "error": f"No open {side} position for {symbol}"}
+        ws = self.ws_clients.get(symbol)
+        price = ws.last_price if ws and ws.last_price > 0 else state["open_positions"][side]["entry_price"]
+        candle = {"close": price, "high": price, "low": price, "open": price, "volume": 0, "timestamp": int(time.time() * 1000)}
+        from strategies.mtf_macd import Signal
+        self._close_position(symbol, side, candle, Signal.FLAT, reason="manual")
+        return {"ok": True, "symbol": symbol, "side": side}
+
+    def close_all_positions(self):
+        """Manually close all open positions (called from dashboard)."""
+        closed = []
+        for symbol in list(self.symbols):
+            state = self.symbol_states.get(symbol, {})
+            for side in list(state.get("open_positions", {}).keys()):
+                result = self.close_position_manual(symbol, side)
+                if result.get("ok"):
+                    closed.append(f"{symbol}:{side}")
+        return {"ok": True, "closed": closed}
+
     def emergency_stop(self):
         """Emergency stop — close all positions immediately."""
         self.logger.critical("EMERGENCY STOP TRIGGERED")
