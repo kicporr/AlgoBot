@@ -1,0 +1,2276 @@
+<!DOCTYPE html>
+<html class="dark" lang="pl">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>Apex Ledger - BTC Bot Trading Dashboard</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface": "#0b1326",
+                        "secondary": "#4edea3",
+                        "surface-dim": "#0b1326",
+                        "tertiary-fixed-dim": "#ffb3ad",
+                        "surface-container-lowest": "#060e20",
+                        "primary-fixed": "#ffdcbf",
+                        "error-container": "#93000a",
+                        "on-surface": "#dae2fd",
+                        "secondary-fixed": "#6ffbbe",
+                        "on-secondary": "#003824",
+                        "on-primary-fixed": "#2d1600",
+                        "on-tertiary-fixed": "#410004",
+                        "on-secondary-fixed": "#002113",
+                        "primary-fixed-dim": "#ffb874",
+                        "on-tertiary-container": "#850010",
+                        "on-primary-container": "#603500",
+                        "surface-container": "#171f33",
+                        "inverse-primary": "#8c4f00",
+                        "on-error-container": "#ffdad6",
+                        "on-secondary-fixed-variant": "#005236",
+                        "background": "#0b1326",
+                        "outline-variant": "#554335",
+                        "primary-container": "#f7931a",
+                        "outline": "#a38d7b",
+                        "primary": "#ffb874",
+                        "surface-tint": "#ffb874",
+                        "on-background": "#dae2fd",
+                        "on-tertiary": "#68000a",
+                        "surface-variant": "#2d3449",
+                        "surface-container-low": "#131b2e",
+                        "tertiary": "#ffb3ae",
+                        "tertiary-container": "#ff8982",
+                        "on-tertiary-fixed-variant": "#930013",
+                        "on-primary": "#4b2800",
+                        "on-surface-variant": "#dbc2ae",
+                        "surface-bright": "#31394d",
+                        "secondary-container": "#00a572",
+                        "on-primary-fixed-variant": "#6b3b00",
+                        "surface-container-highest": "#2d3449",
+                        "on-secondary-container": "#00311f",
+                        "on-error": "#690005",
+                        "error": "#ffb4ab",
+                        "inverse-on-surface": "#283044",
+                        "secondary-fixed-dim": "#4edea3",
+                        "inverse-surface": "#dae2fd",
+                        "tertiary-fixed": "#ffdad7",
+                        "surface-container-high": "#222a3d"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "unit": "4px",
+                        "component-padding-md": "16px",
+                        "layout-gap": "1px",
+                        "gutter": "16px",
+                        "container-margin": "24px",
+                        "component-padding-sm": "8px",
+                        "component-padding-xs": "4px"
+                    },
+                    "fontFamily": {
+                        "display-xl": ["Inter"],
+                        "headline-lg": ["Inter"],
+                        "headline-lg-mobile": ["Inter"],
+                        "body-md": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "body-lg": ["Inter"],
+                        "data-mono": ["JetBrains Mono"],
+                        "headline-md": ["Inter"]
+                    },
+                    "fontSize": {
+                        "display-xl": ["48px", { "lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "headline-lg-mobile": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "body-md": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "label-sm": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500" }],
+                        "body-lg": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "data-mono": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+                        "headline-md": ["20px", { "lineHeight": "28px", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .terminal-scroll {
+            scrollbar-width: thin;
+            scrollbar-color: #31394d #020617;
+        }
+        .terminal-scroll::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .terminal-scroll::-webkit-scrollbar-track {
+            background: #020617;
+        }
+        .terminal-scroll::-webkit-scrollbar-thumb {
+            background-color: #31394d;
+            border-radius: 4px;
+        }
+        .log-entry {
+            animation: fadeIn 0.3s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .blink {
+            animation: blinker 1.5s linear infinite;
+        }
+        @keyframes blinker {
+            50% { opacity: 0.5; }
+        }
+        .pulse-red {
+            animation: pulse-red 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse-red {
+            0%, 100% { opacity: 1; background-color: rgba(147, 0, 10, 0.2); border-color: rgba(255, 180, 171, 0.6); }
+            50% { opacity: .75; background-color: rgba(147, 0, 10, 0.05); border-color: rgba(255, 180, 171, 0.2); }
+        }
+        .toast {
+            animation: slideIn 0.3s ease-out forwards, fadeOut 0.3s ease-in 2.7s forwards;
+        }
+        @keyframes slideIn {
+            from { transform: translateY(100%) translateX(-50%); opacity: 0; }
+            to { transform: translateY(0) translateX(-50%); opacity: 1; }
+        }
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface font-body-md min-h-screen flex overflow-hidden selection:bg-primary-container selection:text-on-primary-container">
+
+    <!-- Toast Notification -->
+    <div id="toast-container" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 pointer-events-none"></div>
+
+    <!-- SideNavBar -->
+    <aside class="bg-surface dark:bg-surface border-r border-outline-variant docked left h-screen w-64 flex flex-col py-container-margin shrink-0 hidden md:flex">
+        <!-- Header -->
+        <div class="px-gutter mb-8">
+            <div class="flex items-center gap-3 mb-6">
+                <div class="w-10 h-10 rounded-full bg-primary-container flex items-center justify-center overflow-hidden border border-outline-variant">
+                    <span class="material-symbols-outlined text-on-primary-container" style="font-variation-settings: 'FILL' 1;">robot</span>
+                </div>
+                <div>
+                    <h2 class="text-headline-md font-headline-md text-primary dark:text-primary">Apex Ledger</h2>
+                    <p class="text-label-sm font-label-sm text-on-surface-variant flex items-center gap-1">
+                        <span id="nav-status-indicator" class="w-2 h-2 rounded-full bg-secondary"></span> 
+                        <span id="nav-status-text">Aktywny</span>
+                    </p>
+                </div>
+            </div>
+        </div>
+        <!-- Navigation Links -->
+        <nav class="flex-1 px-3 space-y-1" id="sidebar-nav">
+            <button onclick="switchTab('overview')" id="nav-overview" class="w-full flex items-center gap-3 px-3 py-2 text-primary font-bold border-r-2 border-primary bg-surface-container translate-x-1 transition-transform rounded-sm">
+                <span class="material-symbols-outlined text-[20px]">dashboard</span>
+                <span class="text-label-sm font-label-sm">Panel Główny</span>
+            </button>
+            <button onclick="switchTab('stats')" id="nav-stats" class="w-full flex items-center gap-3 px-3 py-2 text-on-surface-variant font-medium hover:bg-surface-container-high transition-colors rounded-sm">
+                <span class="material-symbols-outlined text-[20px]">monitoring</span>
+                <span class="text-label-sm font-label-sm">Statystyki</span>
+            </button>
+            <button onclick="switchTab('logs')" id="nav-logs" class="w-full flex items-center gap-3 px-3 py-2 text-on-surface-variant font-medium hover:bg-surface-container-high transition-colors rounded-sm">
+                <span class="material-symbols-outlined text-[20px]">terminal</span>
+                <span class="text-label-sm font-label-sm">Logi</span>
+            </button>
+            <button onclick="switchTab('settings')" id="nav-settings" class="w-full flex items-center gap-3 px-3 py-2 text-on-surface-variant font-medium hover:bg-surface-container-high transition-colors rounded-sm">
+                <span class="material-symbols-outlined text-[20px]">settings</span>
+                <span class="text-label-sm font-label-sm">Ustawienia</span>
+            </button>
+        </nav>
+        <!-- Footer Links -->
+        <div class="px-3 mt-auto space-y-1 pt-4 border-t border-outline-variant/30">
+            <div class="px-3 py-2 text-label-sm text-on-surface-variant font-data-mono text-center opacity-50">
+                v0.1.0 (Bitget)
+            </div>
+            <button onclick="triggerEmergency()" class="w-full bg-error text-on-error hover:bg-error-container hover:text-error transition-colors font-label-sm text-label-sm py-2 rounded flex items-center justify-center gap-2 font-bold tracking-wide uppercase">
+                <span class="material-symbols-outlined text-[16px]">emergency</span> Stop Awaryjny
+            </button>
+        </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 flex flex-col h-screen overflow-hidden bg-background">
+        <!-- TopNavBar -->
+        <header class="bg-surface-container-low dark:bg-surface-container-low flex justify-between items-center w-full px-gutter h-16 border-b border-outline-variant shrink-0">
+            <div class="flex items-center gap-6">
+                <h1 id="mobile-title" class="text-headline-md font-headline-md font-bold text-primary dark:text-primary md:hidden">Panel Główny</h1>
+                <!-- Navigation Info (Web) -->
+                <div class="hidden xl:flex gap-6 h-full items-center">
+                    <div class="flex items-center gap-3 border-r border-outline-variant pr-6">
+                        <span class="text-label-sm font-label-sm text-on-surface-variant uppercase">Status Bota:</span>
+                        <button id="status-badge" class="flex items-center gap-2 bg-secondary/10 border border-secondary/30 px-3 py-1 rounded-full text-secondary font-label-sm transition-colors hover:bg-secondary/20">
+                            <span class="w-2 h-2 rounded-full bg-secondary shadow-[0_0_5px_rgba(78,222,163,0.8)]"></span>
+                            Aktywny
+                        </button>
+                    </div>
+                    <div class="flex items-center gap-3 border-r border-outline-variant pr-6">
+                        <span id="mode-badge" class="inline-block px-2 py-0.5 bg-primary/20 text-primary border border-primary/30 rounded text-label-sm font-label-sm font-bold tracking-wider">PAPER TRADING</span>
+                    </div>
+                    <div class="text-data-mono font-data-mono text-on-surface-variant font-medium flex items-center gap-2 border-r border-outline-variant pr-6">
+                        <span class="material-symbols-outlined text-[18px]">currency_exchange</span>
+                        <span id="exchange-info">Bitget | BTCUSDT (USDT-Futures)</span>
+                    </div>
+                    <div id="header-tickers" class="text-data-mono font-data-mono text-on-surface-variant font-medium flex items-center gap-4 border-r border-outline-variant pr-6 overflow-x-auto no-scrollbar max-w-[500px] lg:max-w-[700px] xl:max-w-[900px] shrink-0">
+                        <!-- Tickers will be dynamically rendered here -->
+                    </div>
+                    <div class="text-data-mono font-data-mono text-on-surface-variant font-medium flex items-center gap-2 pl-2">
+                        <span class="material-symbols-outlined text-[18px]">network_ping</span>
+                        Opóźnienie: <span id="ping-text" class="text-secondary">42ms</span>
+                    </div>
+                </div>
+            </div>
+            <div class="flex items-center gap-4">
+                <div class="md:hidden flex gap-2">
+                    <button onclick="switchTab('overview')" class="p-2 rounded text-on-surface-variant hover:bg-surface-container"><span class="material-symbols-outlined">dashboard</span></button>
+                    <button onclick="switchTab('stats')" class="p-2 rounded text-on-surface-variant hover:bg-surface-container"><span class="material-symbols-outlined">monitoring</span></button>
+                    <button onclick="switchTab('logs')" class="p-2 rounded text-on-surface-variant hover:bg-surface-container"><span class="material-symbols-outlined">terminal</span></button>
+                    <button onclick="switchTab('settings')" class="p-2 rounded text-on-surface-variant hover:bg-surface-container"><span class="material-symbols-outlined">settings</span></button>
+                </div>
+            </div>
+        </header>
+
+        <!-- ==================== TAB 1: OVERVIEW ==================== -->
+        <div id="tab-overview" class="tab-content flex-1 overflow-y-auto p-gutter md:p-container-margin space-y-gutter">
+            <!-- 1. Financial Metrics Row -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-8 gap-gutter">
+                <div class="bg-surface-container-highest border border-surface-bright rounded p-component-padding-md col-span-1 lg:col-span-2">
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <h3 class="text-label-sm font-label-sm text-on-surface-variant uppercase mb-1">Kapitał Całkowity (Equity)</h3>
+                            <span id="metric-equity" class="text-[28px] leading-tight font-headline-lg font-bold text-on-surface">$0.00</span>
+                        </div>
+                        <div class="text-right">
+                            <h3 class="text-label-sm font-label-sm text-on-surface-variant uppercase mb-1">Dostępne Środki</h3>
+                            <span id="metric-balance" class="text-headline-md font-headline-md text-on-surface">$0.00</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-surface-container-highest border border-surface-bright rounded p-component-padding-md col-span-1 lg:col-span-2">
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <h3 class="text-label-sm font-label-sm text-on-surface-variant uppercase mb-1">Zysk/Strata (PnL)</h3>
+                            <div class="flex items-baseline gap-2">
+                                <span id="metric-pnl" class="text-[28px] leading-tight font-headline-lg font-bold text-secondary">+$0.00</span>
+                                <span id="metric-pnl-pct" class="text-data-mono font-data-mono text-secondary">(+0.00%)</span>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <h3 class="text-label-sm font-label-sm text-on-surface-variant uppercase mb-1">Obsunięcie</h3>
+                            <div class="text-headline-md font-headline-md text-error"><span id="metric-drawdown">0.0%</span> <span class="text-label-sm text-on-surface-variant">/ Limit: 20%</span></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-surface-container-highest border border-surface-bright rounded p-component-padding-md col-span-1 lg:col-span-2">
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <h3 class="text-label-sm font-label-sm text-on-surface-variant uppercase mb-1">Skuteczność (Win Rate)</h3>
+                            <span id="metric-winrate" class="text-[28px] leading-tight font-headline-lg font-bold text-on-surface">0.0%</span>
+                        </div>
+                        <div class="text-right">
+                            <h3 class="text-label-sm font-label-sm text-on-surface-variant uppercase mb-1">Transakcje</h3>
+                            <span id="metric-trades-count" class="text-headline-md font-headline-md text-on-surface">0</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-surface-container-highest border border-surface-bright rounded p-component-padding-md col-span-1 lg:col-span-2 flex flex-col justify-between">
+                    <div>
+                        <h3 class="text-label-sm font-label-sm text-on-surface-variant uppercase mb-2 font-bold flex items-center gap-1">
+                            <span class="material-symbols-outlined text-[16px]">show_chart</span> Ceny Aktywów (24H)
+                        </h3>
+                        <div id="metric-tickers-grid" class="grid grid-cols-2 gap-x-4 gap-y-2 pt-1">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. Active Position & Circuit Breaker Row -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-gutter">
+                <!-- Active Positions Container -->
+                <div id="positions-container" class="space-y-4">
+                    <div id="position-card" class="bg-surface-container-highest border border-outline-variant rounded p-component-padding-md relative">
+                        <div id="position-border" class="absolute top-0 left-0 w-1 h-full bg-outline-variant rounded-l"></div>
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <h3 class="text-label-sm font-label-sm text-on-surface-variant uppercase mb-2">Aktywne Pozycje</h3>
+                                <div class="flex items-center gap-3">
+                                    <span id="position-side" class="flex items-center gap-1 px-2 py-0.5 bg-outline-variant text-on-surface-variant border border-outline-variant rounded text-label-sm font-label-sm font-bold">
+                                        BRAK POZYCJI
+                                    </span>
+                                    <span id="position-size" class="text-headline-md font-headline-md text-on-surface-variant">Brak aktywnego zlecenia</span>
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <h3 class="text-label-sm font-label-sm text-on-surface-variant uppercase mb-1">Niezrealizowany PnL</h3>
+                                <span id="position-pnl" class="text-headline-lg font-headline-lg font-bold text-on-surface-variant">-</span>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-3 gap-4 border-t border-surface-bright pt-4 mt-2">
+                            <div>
+                                <div class="text-label-sm text-on-surface-variant mb-1">Wejście vs Obecna</div>
+                                <div id="position-prices" class="text-data-mono text-on-surface-variant font-medium">-</div>
+                            </div>
+                            <div>
+                                <div class="text-label-sm text-on-surface-variant mb-1">Take Profit (TP)</div>
+                                <div id="position-tp" class="text-data-mono text-on-surface-variant font-medium">-</div>
+                            </div>
+                            <div>
+                                <div class="text-label-sm text-on-surface-variant mb-1">Stop Loss (SL)</div>
+                                <div id="position-sl" class="text-data-mono text-on-surface-variant font-medium">-</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Circuit Breaker Card -->
+                <div id="breaker-card" class="bg-surface-container-highest border border-outline-variant rounded p-component-padding-md relative overflow-hidden">
+                    <div class="relative z-10 flex flex-col h-full justify-between">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <h3 class="text-label-sm font-label-sm text-on-surface-variant uppercase mb-2 flex items-center gap-1 font-bold">
+                                    <span class="material-symbols-outlined text-[16px]">gavel</span> Stan Bezpiecznika
+                                </h3>
+                                <span id="breaker-status" class="text-headline-lg font-headline-lg text-secondary font-bold">NORMALNY</span>
+                            </div>
+                        </div>
+                        <div id="breaker-reason" class="text-body-md text-on-surface-variant mb-4 font-medium">
+                            System działa bez ograniczeń.
+                        </div>
+                        <div class="flex gap-4 border-t border-outline-variant/30 pt-4 mt-auto">
+                            <button onclick="resetBreaker()" class="flex-1 bg-surface-container border border-outline-variant hover:bg-surface-container-high py-2 rounded text-label-sm font-label-sm transition-colors font-bold tracking-wide">
+                                ZRESETUJ BEZPIECZNIK
+                            </button>
+                            <button onclick="triggerEmergency()" class="flex-1 bg-error text-on-error hover:bg-error-container hover:text-error py-2 rounded text-label-sm font-label-sm transition-colors font-bold tracking-wide flex items-center justify-center gap-2 uppercase">
+                                <span class="material-symbols-outlined text-[16px]">emergency</span> Wyłączenie Awaryjne
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Proximity Symbol Selector -->
+            <div class="bg-surface-container-high border border-surface-bright rounded p-3 flex justify-between items-center flex-wrap gap-2">
+                <div class="flex items-center gap-2">
+                    <span class="material-symbols-outlined text-primary text-[20px]">filter_list</span>
+                    <span class="text-label-sm font-label-sm text-on-surface-variant font-bold uppercase tracking-wider">Wgląd Sygnałów:</span>
+                </div>
+                <div id="proximity-tabs" class="flex gap-2">
+                    <!-- Populated dynamically via JS -->
+                </div>
+            </div>
+
+            <!-- Proximity do Sygnałów Row -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-gutter">
+                <!-- MTF MACD Elder Proximity Card -->
+                <div class="bg-surface-container-highest border border-surface-bright rounded p-component-padding-md flex flex-col justify-between">
+                    <div>
+                        <h3 class="text-label-sm font-label-sm text-on-surface-variant uppercase mb-3 flex items-center gap-1 font-bold">
+                            <span class="material-symbols-outlined text-[16px]">show_chart</span> Sygnały: MTF MACD Elder
+                        </h3>
+                        <div class="space-y-4">
+                            <!-- Daily Trend -->
+                            <div class="flex justify-between items-center border-b border-surface-bright pb-2">
+                                <span class="text-body-md text-on-surface-variant">Trend D1 (Elder Filter)</span>
+                                <span id="prox-macd-d1-trend" class="px-2 py-0.5 rounded text-label-sm font-bold bg-surface-variant text-on-surface-variant">-</span>
+                            </div>
+                            
+                            <!-- MACD Histogram / Crossover Proximity -->
+                            <div class="space-y-1">
+                                <div class="flex justify-between text-body-md">
+                                    <span class="text-on-surface-variant">Odległość MACD do Sygnału (Histogram 1H)</span>
+                                    <span id="prox-macd-hist-val" class="font-data-mono text-primary font-bold">0.00</span>
+                                </div>
+                                <div class="relative w-full h-4 bg-surface-container-lowest rounded overflow-hidden flex items-center">
+                                    <!-- Central line representing zero crossover -->
+                                    <div class="absolute left-1/2 w-0.5 h-full bg-outline-variant z-10"></div>
+                                    <!-- Deviation bar -->
+                                    <div id="prox-macd-hist-bar" class="h-full bg-secondary transition-all duration-300" style="width: 0%; margin-left: 50%;"></div>
+                                </div>
+                                <div class="flex justify-between text-[11px] text-on-surface-variant font-data-mono">
+                                    <span>Przecięcie w dół (SHORT)</span>
+                                    <span>Neutralny (0)</span>
+                                    <span>Przecięcie w górę (LONG)</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Volume Ratio -->
+                            <div id="prox-macd-volume-container" class="space-y-1">
+                                <div class="flex justify-between text-body-md">
+                                    <span class="text-on-surface-variant">Potwierdzenie wolumenu (Wolumen / MA)</span>
+                                    <span id="prox-macd-volume-val" class="font-data-mono font-bold">-</span>
+                                </div>
+                                <div class="w-full bg-surface-container-lowest rounded h-3 overflow-hidden">
+                                    <div id="prox-macd-volume-bar" class="h-full bg-secondary-container transition-all duration-300" style="width: 0%;"></div>
+                                </div>
+                                <div class="flex justify-between text-[11px] text-on-surface-variant font-data-mono">
+                                    <span>Brak potwierdzenia (&lt; 1.2x)</span>
+                                    <span id="prox-macd-volume-target" class="text-primary font-bold">Próg: 1.2x</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                               <!-- Warunki Wejścia w Pozycję Checklist Card -->
+                <div class="bg-surface-container-highest border border-surface-bright rounded p-component-padding-md flex flex-col justify-between">
+                    <div>
+                        <h3 class="text-label-sm font-label-sm text-on-surface-variant uppercase mb-3 flex items-center gap-1 font-bold">
+                            <span class="material-symbols-outlined text-[16px]">rule</span> Warunki Wejścia w Pozycję
+                        </h3>
+                        <div class="space-y-3 pt-1">
+                            <!-- 1. Circuit Breaker -->
+                            <div class="flex justify-between items-center border-b border-surface-bright pb-2">
+                                <span class="text-body-md text-on-surface-variant">Bezpiecznik Systemowy</span>
+                                <div id="checklist-cb" class="flex items-center gap-1.5 font-bold">
+                                    <span class="material-symbols-outlined text-[16px] text-error">cancel</span>
+                                    <span class="text-error text-label-sm">ZABLOKOWANY</span>
+                                </div>
+                            </div>
+                            
+                            <!-- 2. Market Regime -->
+                            <div class="flex justify-between items-center border-b border-surface-bright pb-2">
+                                <span class="text-body-md text-on-surface-variant">Reżim Rynkowy</span>
+                                <div id="checklist-regime" class="flex items-center gap-1.5 font-bold">
+                                    <span class="material-symbols-outlined text-[16px] text-error">cancel</span>
+                                    <span class="text-error text-label-sm">BRAK TRENDU</span>
+                                </div>
+                            </div>
+                            
+                            <!-- 3. D1 Trend Filter -->
+                            <div class="flex justify-between items-center border-b border-surface-bright pb-2">
+                                <span class="text-body-md text-on-surface-variant">Dobowy Filtr Elder D1</span>
+                                <div id="checklist-d1" class="flex items-center gap-1.5 font-bold">
+                                    <span class="material-symbols-outlined text-[16px] text-error">cancel</span>
+                                    <span class="text-error text-label-sm">PŁASKI (FLAT)</span>
+                                </div>
+                            </div>
+                            
+                            <!-- 4. Volume Confirmation -->
+                            <div class="flex justify-between items-center border-b border-surface-bright pb-2">
+                                <span class="text-body-md text-on-surface-variant">Potwierdzenie Wolumenu</span>
+                                <div id="checklist-volume" class="flex items-center gap-1.5 font-bold">
+                                    <span class="material-symbols-outlined text-[16px] text-error">cancel</span>
+                                    <span class="text-error text-label-sm">NIEPOTWIERDZONY</span>
+                                </div>
+                            </div>
+
+                            <!-- 5. Final Status / Action -->
+                            <div class="flex justify-between items-center pt-2">
+                                <span class="text-body-md font-semibold text-on-surface">Status Decyzyjny</span>
+                                <span id="checklist-decision" class="px-2 py-0.5 rounded text-label-sm font-bold bg-surface-variant text-on-surface-variant">
+                                    OCZEKIWANIE NA SYGNAŁ
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>             </div>
+
+            <!-- 3. Simulated Equity Curve -->
+            <div class="bg-surface-container-highest border border-surface-bright rounded h-64 flex flex-col">
+                <div class="px-component-padding-md py-3 border-b border-surface-bright flex justify-between items-center">
+                    <h3 class="text-body-md font-body-md font-semibold text-on-surface">Krzywa Kapitału</h3>
+                    <span class="text-label-sm font-label-sm text-on-surface-variant">Aktualizacja w czasie rzeczywistym</span>
+                </div>
+                <div class="flex-1 relative" id="chart-container">
+                    <div class="absolute inset-x-12 inset-y-6 border-b border-l border-outline-variant/50">
+                        <!-- Grid Labels Overlay -->
+                        <div id="chart-y-labels" class="absolute -right-10 top-0 bottom-0 flex flex-col justify-between text-[10px] font-data-mono text-on-surface-variant pointer-events-none text-right h-full"></div>
+                        
+                        <!-- Simulated Line Chart using SVG -->
+                        <svg class="w-full h-full" preserveAspectRatio="none" viewBox="0 0 100 100" id="equity-svg">
+                            <g id="equity-grid-lines"></g>
+                            <line id="equity-baseline" x1="0" y1="50" x2="100" y2="50" stroke="#ffb874" stroke-width="0.5" stroke-dasharray="2,2" opacity="0" vector-effect="non-scaling-stroke"></line>
+                            <path d="M 0 90 Q 20 85, 40 70 T 70 50 T 100 20" fill="none" stroke="#ffb874" stroke-width="2" filter="url(#chartGlow)" vector-effect="non-scaling-stroke" id="equity-path"></path>
+                            <path d="M 0 100 L 0 90 Q 20 85, 40 70 T 70 50 T 100 20 L 100 100 Z" fill="url(#chartGradient)" opacity="0.15" id="equity-fill-path"></path>
+                            <line id="chart-cursor-line" x1="0" y1="0" x2="0" y2="100" stroke="#a38d7b" stroke-width="0.75" stroke-dasharray="2,2" opacity="0" vector-effect="non-scaling-stroke"></line>
+                            <defs>
+                                <linearGradient id="chartGradient" x1="0" x2="0" y1="0" y2="1">
+                                    <stop offset="0%" stop-color="#ffb874"></stop>
+                                    <stop offset="100%" stop-color="transparent"></stop>
+                                </linearGradient>
+                                <filter id="chartGlow" x="-20%" y="-20%" width="140%" height="140%">
+                                    <feGaussianBlur stdDeviation="1.5" result="blur" />
+                                    <feMerge>
+                                        <feMergeNode in="blur" />
+                                        <feMergeNode in="SourceGraphic" />
+                                    </feMerge>
+                                </filter>
+                            </defs>
+                        </svg>
+                        
+                        <!-- Interactive Cursor Dot -->
+                        <div id="chart-cursor-dot" class="absolute w-2.5 h-2.5 rounded-full bg-primary border border-surface pointer-events-none hidden -translate-x-1/2 -translate-y-1/2" style="box-shadow: 0 0 6px #ffb874;"></div>
+                    </div>
+                    
+                    <!-- HTML Tooltip -->
+                    <div id="chart-tooltip" class="absolute hidden bg-surface-container-high/95 border border-outline-variant rounded p-2.5 text-[11px] font-data-mono text-on-surface pointer-events-none shadow-lg z-20 backdrop-blur-sm"></div>
+                </div>
+            </div>
+
+            <!-- 4. Bottom Grid (Table & Logs) -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-gutter h-[400px]">
+                <!-- Signals & Trades Table -->
+                <div class="bg-surface-container-highest border border-surface-bright rounded flex flex-col overflow-hidden lg:col-span-2">
+                    <div class="px-component-padding-md py-3 border-b border-surface-bright">
+                        <div class="flex justify-between items-center w-full">
+                            <h3 class="text-body-md font-body-md font-semibold text-on-surface">Ostatnie Transakcje</h3>
+                        </div>
+                    </div>
+                    <div class="flex-1 overflow-auto terminal-scroll">
+                        <table class="w-full text-left text-data-mono font-data-mono whitespace-nowrap">
+                            <thead class="text-label-sm font-label-sm text-on-surface-variant uppercase sticky top-0 bg-surface-container-highest border-b border-surface-bright shadow-sm z-10">
+                                <tr>
+                                    <th class="px-4 py-3 font-normal">Czas Zamknięcia</th>
+                                    <th class="px-4 py-3 font-normal">Kierunek</th>
+                                    <th class="px-4 py-3 font-normal">Rozmiar</th>
+                                    <th class="px-4 py-3 font-normal text-right">Cena Wejścia</th>
+                                    <th class="px-4 py-3 font-normal text-right">Cena Wyjścia</th>
+                                    <th class="px-4 py-3 font-normal text-right">PnL</th>
+                                    <th class="px-4 py-3 font-normal text-right">PnL %</th>
+                                    <th class="px-4 py-3 font-normal">Strategia</th>
+                                </tr>
+                            </thead>
+                            <tbody id="trades-table-body">
+                                <tr>
+                                    <td colspan="8" class="px-4 py-8 text-center text-on-surface-variant">Brak transakcji w bazie danych</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Live Logs Terminal Mini -->
+                <div class="bg-[#020617] border border-surface-bright rounded flex flex-col font-data-mono text-data-mono lg:col-span-1">
+                    <div class="px-component-padding-md py-3 border-b border-surface-bright flex items-center justify-between bg-surface-container-highest">
+                        <h3 class="text-body-md font-body-md font-semibold text-on-surface flex items-center gap-2">
+                            <span class="material-symbols-outlined text-[16px]">terminal</span> Podgląd Logów
+                        </h3>
+                        <button onclick="switchTab('logs')" class="text-label-sm text-primary hover:underline">Pełny widok</button>
+                    </div>
+                    <div class="flex-1 p-4 overflow-y-auto terminal-scroll text-secondary/90 flex flex-col gap-1 text-[12px]" id="mini-log-container">
+                        <div class="text-on-surface-variant">Inicjalizacja podglądu...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== TAB 2: LOGS ==================== -->
+        <div id="tab-logs" class="tab-content flex-1 flex flex-col p-container-margin overflow-hidden gap-unit hidden">
+            <!-- Header Section -->
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 shrink-0 gap-4">
+                <div>
+                    <h1 class="font-headline-lg text-headline-lg text-on-background m-0">Logi Systemowe</h1>
+                    <p class="font-body-md text-body-md text-on-surface-variant mt-1">Strumień danych czasu rzeczywistego z bota tradingowego</p>
+                </div>
+            </div>
+            <!-- Terminal Container -->
+            <div class="flex-1 flex flex-col bg-surface border border-outline-variant rounded overflow-hidden">
+                <!-- Terminal Toolbar -->
+                <div class="flex flex-wrap items-center justify-between p-component-padding-sm border-b border-outline-variant bg-[#1E293B] gap-4 shrink-0">
+                    <!-- Filters -->
+                    <div class="flex items-center gap-2 overflow-x-auto no-scrollbar">
+                        <span class="font-label-sm text-label-sm text-on-surface-variant uppercase mr-2 shrink-0">Poziom:</span>
+                        <button onclick="filterLogs('ALL')" id="filter-all" class="px-3 py-1 bg-primary text-on-primary font-label-sm text-label-sm rounded border border-primary transition-colors shrink-0">ALL</button>
+                        <button onclick="filterLogs('INFO')" id="filter-info" class="px-3 py-1 bg-transparent text-on-surface-variant hover:bg-surface-container font-label-sm text-label-sm rounded border border-transparent hover:border-outline-variant transition-colors shrink-0">INFO</button>
+                        <button onclick="filterLogs('WARNING')" id="filter-warn" class="px-3 py-1 bg-transparent text-primary-container hover:bg-surface-container font-label-sm text-label-sm rounded border border-transparent hover:border-outline-variant transition-colors shrink-0">WARN</button>
+                        <button onclick="filterLogs('ERROR')" id="filter-error" class="px-3 py-1 bg-transparent text-error hover:bg-surface-container font-label-sm text-label-sm rounded border border-transparent hover:border-outline-variant transition-colors shrink-0">ERROR</button>
+                        <button onclick="filterLogs('CRITICAL')" id="filter-crit" class="px-3 py-1 bg-transparent text-[#ef4444] font-bold hover:bg-surface-container font-label-sm text-label-sm rounded border border-transparent hover:border-outline-variant transition-colors shrink-0">CRIT</button>
+                    </div>
+                    <!-- Search & Actions -->
+                    <div class="flex flex-1 sm:flex-none items-center justify-end gap-3 min-w-0">
+                        <div class="relative flex-1 sm:w-48 max-w-xs">
+                            <span class="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-on-surface-variant text-[16px]">search</span>
+                            <input id="log-search-input" oninput="applyLogSearch()" class="w-full bg-[#020617] border border-outline-variant rounded py-1 pl-8 pr-2 text-on-background font-data-mono text-[12px] placeholder:text-on-surface-variant focus:border-primary focus:ring-0 transition-colors h-8" placeholder="Filtruj tekst..." type="text"/>
+                        </div>
+                        <div class="h-4 w-[1px] bg-outline-variant mx-1 hidden sm:block"></div>
+                        <div class="flex items-center gap-2 shrink-0">
+                            <label class="flex items-center gap-2 cursor-pointer group" title="Auto-scroll">
+                                <span class="font-label-sm text-label-sm text-on-surface-variant group-hover:text-on-background transition-colors hidden lg:block">Auto-scroll</span>
+                                <div class="relative inline-flex items-center">
+                                    <input id="autoscroll-checkbox" checked class="sr-only peer" type="checkbox"/>
+                                    <div class="w-8 h-4 bg-surface-container-highest rounded-full peer peer-checked:bg-secondary-container transition-colors border border-outline-variant"></div>
+                                    <div class="absolute left-[2px] top-[2px] w-3 h-3 bg-on-background rounded-full transition-transform peer-checked:translate-x-4"></div>
+                                </div>
+                            </label>
+                            <button onclick="clearConsole()" class="h-8 px-3 flex items-center justify-center gap-1 bg-transparent hover:bg-surface-container border border-outline-variant text-on-surface-variant hover:text-on-background rounded transition-colors" title="Wyczyść Konsolę">
+                                <span class="material-symbols-outlined text-[16px]">delete</span>
+                                <span class="font-label-sm text-label-sm">Wyczyść</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <!-- Actual Terminal Window -->
+                <div class="flex-1 bg-[#020617] p-component-padding-md overflow-y-auto font-data-mono text-data-mono flex flex-col gap-1 relative" id="terminal-content">
+                    <!-- Logs inserted dynamically -->
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== TAB 3: SETTINGS ==================== -->
+        <div id="tab-settings" class="tab-content flex-1 overflow-y-auto p-container-margin hidden">
+            <div class="max-w-6xl mx-auto space-y-gutter">
+                <!-- Page Header -->
+                <div class="mb-6 flex justify-between items-end border-b border-surface-container-highest pb-4">
+                    <div>
+                        <h1 class="font-headline-lg text-headline-lg text-on-surface mb-1">Ustawienia Systemowe</h1>
+                        <p class="font-body-md text-body-md text-on-surface-variant">Zarządzaj integracją, modelami ryzyka i parametrami operacyjnymi.</p>
+                    </div>
+                    <button onclick="saveSettings()" class="bg-primary text-on-primary font-body-md text-body-md font-semibold py-2 px-6 rounded hover:bg-primary-container transition-colors focus:outline-none focus:ring-2 focus:ring-primary">
+                        Zapisz Ustawienia
+                    </button>
+                </div>
+                <!-- Bento Grid Layout -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-layout-gap bg-surface-variant border border-surface-variant">
+                    <!-- 1. API & Credentials -->
+                    <section class="bg-surface-container p-container-margin flex flex-col gap-4">
+                        <header class="flex items-center gap-2 border-b border-surface-container-highest pb-2 mb-2">
+                            <span class="material-symbols-outlined text-on-surface-variant text-sm">key</span>
+                            <h3 class="font-label-sm text-label-sm uppercase text-on-surface-variant tracking-wider">Klucze API i Komunikacja</h3>
+                        </header>
+                        <div class="space-y-4">
+                            <div class="flex flex-col gap-1">
+                                <label class="font-label-sm text-label-sm text-on-surface-variant">Telegram Bot Token</label>
+                                <input id="settings-tg-token" class="w-full bg-surface-container-lowest border border-surface-container-highest rounded px-3 py-2 font-data-mono text-data-mono text-on-surface focus:border-primary focus:ring-0 transition-colors" type="password" value=""/>
+                            </div>
+                            <div class="flex flex-col gap-1">
+                                <label class="font-label-sm text-label-sm text-on-surface-variant">Telegram Chat ID</label>
+                                <input id="settings-tg-chatid" class="w-full bg-surface-container-lowest border border-surface-container-highest rounded px-3 py-2 font-data-mono text-data-mono text-on-surface focus:border-primary focus:ring-0 transition-colors" type="text" value=""/>
+                            </div>
+                            <div class="text-[12px] text-on-surface-variant leading-relaxed">
+                                Dane są wczytywane z pliku <code class="text-primary font-bold">config/.env</code>. Ze względów bezpieczeństwa token bota jest zamaskowany w polu typu password.
+                            </div>
+                        </div>
+                    </section>
+                    <!-- 2. Parametry Ryzyka (Risk Management) -->
+                    <section class="bg-surface-container p-container-margin flex flex-col gap-4">
+                        <header class="flex items-center gap-2 border-b border-surface-container-highest pb-2 mb-2">
+                            <span class="material-symbols-outlined text-on-surface-variant text-sm">monitoring</span>
+                            <h3 class="font-label-sm text-label-sm uppercase text-on-surface-variant tracking-wider">Zarządzanie Pozycją (Ryzyko)</h3>
+                        </header>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="flex flex-col gap-1 col-span-2 sm:col-span-1">
+                                <label class="font-label-sm text-label-sm text-on-surface-variant">Initial Capital</label>
+                                <div class="relative">
+                                    <span class="absolute left-3 top-1/2 -translate-y-1/2 font-data-mono text-data-mono text-on-surface-variant">$</span>
+                                    <input id="settings-risk-initial" class="w-full bg-surface-container-lowest border border-surface-container-highest rounded pl-8 pr-3 py-2 font-data-mono text-data-mono text-on-surface focus:border-primary focus:ring-0 transition-colors" type="text" value="10,000"/>
+                                </div>
+                            </div>
+                            <div class="flex flex-col gap-1 col-span-2 sm:col-span-1">
+                                <label class="font-label-sm text-label-sm text-on-surface-variant">Metoda Pozycjonowania</label>
+                                <select id="settings-risk-method" class="w-full bg-surface-container-lowest border border-surface-container-highest rounded px-3 py-2 font-data-mono text-data-mono text-on-surface focus:border-primary focus:ring-0 transition-colors appearance-none">
+                                    <option value="half_kelly">half_kelly</option>
+                                    <option value="fixed_fraction">fixed_fraction</option>
+                                    <option value="equal">equal</option>
+                                </select>
+                            </div>
+                            <div class="flex flex-col gap-1">
+                                <label class="font-label-sm text-label-sm text-on-surface-variant">Max Risk per Trade</label>
+                                <div class="relative">
+                                    <input id="settings-risk-maxrisk" class="w-full bg-surface-container-lowest border border-surface-container-highest rounded px-3 py-2 font-data-mono text-data-mono text-on-surface focus:border-primary focus:ring-0 transition-colors text-right pr-8" type="text" value="2.0"/>
+                                    <span class="absolute right-3 top-1/2 -translate-y-1/2 font-data-mono text-data-mono text-on-surface-variant">%</span>
+                                </div>
+                            </div>
+                            <div class="flex flex-col gap-1">
+                                <label class="font-label-sm text-label-sm text-on-surface-variant">Hard Stop Loss</label>
+                                <div class="relative">
+                                    <input id="settings-risk-sl" class="w-full bg-surface-container-lowest border border-surface-container-highest rounded px-3 py-2 font-data-mono text-data-mono text-on-surface focus:border-primary focus:ring-0 transition-colors text-right pr-8" type="text" value="3.0"/>
+                                    <span class="absolute right-3 top-1/2 -translate-y-1/2 font-data-mono text-data-mono text-on-surface-variant">%</span>
+                                </div>
+                            </div>
+                            <div class="flex flex-col gap-1">
+                                <label class="font-label-sm text-label-sm text-on-surface-variant">Hard Take Profit</label>
+                                <div class="relative">
+                                    <input id="settings-risk-tp" class="w-full bg-surface-container-lowest border border-surface-container-highest rounded px-3 py-2 font-data-mono text-data-mono text-on-surface focus:border-primary focus:ring-0 transition-colors text-right pr-8" type="text" value="8.0"/>
+                                    <span class="absolute right-3 top-1/2 -translate-y-1/2 font-data-mono text-data-mono text-on-surface-variant">%</span>
+                                </div>
+                            </div>
+                            <div class="flex flex-col gap-1">
+                                <label class="font-label-sm text-label-sm text-on-surface-variant">Trailing Stop Activation & Step</label>
+                                <div class="flex gap-2">
+                                    <div class="relative flex-1">
+                                        <input id="settings-risk-trail-act" class="w-full bg-surface-container-lowest border border-surface-container-highest rounded px-2 py-2 font-data-mono text-data-mono text-on-surface focus:border-primary focus:ring-0 transition-colors text-right pr-6" title="Activation" type="text" value="3.0"/>
+                                        <span class="absolute right-2 top-1/2 -translate-y-1/2 font-data-mono text-data-mono text-on-surface-variant text-xs">%</span>
+                                    </div>
+                                    <div class="relative flex-1">
+                                        <input id="settings-risk-trail-dist" class="w-full bg-surface-container-lowest border border-surface-container-highest rounded px-2 py-2 font-data-mono text-data-mono text-on-surface focus:border-primary focus:ring-0 transition-colors text-right pr-6" title="Distance" type="text" value="1.5"/>
+                                        <span class="absolute right-2 top-1/2 -translate-y-1/2 font-data-mono text-data-mono text-on-surface-variant text-xs">%</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                    <!-- 3. Circuit Breakers -->
+                    <section class="bg-surface-container p-container-margin flex flex-col gap-4">
+                        <header class="flex items-center gap-2 border-b border-surface-container-highest pb-2 mb-2">
+                            <span class="material-symbols-outlined text-on-surface-variant text-sm">power_settings_new</span>
+                            <h3 class="font-label-sm text-label-sm uppercase text-on-surface-variant tracking-wider">Zabezpieczenia (Circuit Breakers)</h3>
+                        </header>
+                        <div class="space-y-4">
+                            <div class="flex items-center justify-between border-b border-surface-container-highest pb-3">
+                                <div>
+                                    <label class="font-body-md text-body-md font-medium text-on-surface block">Consecutive Losses Limit</label>
+                                    <span class="font-label-sm text-label-sm text-on-surface-variant">Limit strat pod rząd blokujący trading</span>
+                                </div>
+                                <input id="settings-cb-consec" class="w-20 bg-surface-container-lowest border border-surface-container-highest rounded px-3 py-1.5 font-data-mono text-data-mono text-on-surface text-center focus:border-primary focus:ring-0 transition-colors" type="number" value="5"/>
+                            </div>
+                            <div class="flex items-center justify-between border-b border-surface-container-highest pb-3">
+                                <div>
+                                    <label class="font-body-md text-body-md font-medium text-on-surface block">Daily Loss Limit</label>
+                                    <span class="font-label-sm text-label-sm text-on-surface-variant">Maksymalny spadek w ciągu doby od szczytu</span>
+                                </div>
+                                <div class="relative w-24">
+                                    <input id="settings-cb-daily" class="w-full bg-surface-container-lowest border border-surface-container-highest rounded px-3 py-1.5 font-data-mono text-data-mono text-on-surface text-right pr-8 focus:border-primary focus:ring-0 transition-colors" type="text" value="5.0"/>
+                                    <span class="absolute right-3 top-1/2 -translate-y-1/2 font-data-mono text-data-mono text-on-surface-variant">%</span>
+                                </div>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <label class="font-body-md text-body-md font-medium text-on-surface block text-error">Max Drawdown Limit</label>
+                                    <span class="font-label-sm text-label-sm text-on-surface-variant">Globalny wyłącznik bezpieczeństwa</span>
+                                </div>
+                                <div class="relative w-24">
+                                    <input id="settings-cb-drawdown" class="w-full bg-surface-container-lowest border border-error-container text-error rounded px-3 py-1.5 font-data-mono text-data-mono text-right pr-8 focus:border-error focus:ring-0 transition-colors" type="text" value="20.0"/>
+                                    <span class="absolute right-3 top-1/2 -translate-y-1/2 font-data-mono text-data-mono text-error opacity-70">%</span>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                    <!-- 4. Strategie & Reżimy -->
+                    <section class="bg-surface-container p-container-margin flex flex-col gap-4">
+                        <header class="flex items-center gap-2 border-b border-surface-container-highest pb-2 mb-2">
+                            <span class="material-symbols-outlined text-on-surface-variant text-sm">memory</span>
+                            <h3 class="font-label-sm text-label-sm uppercase text-on-surface-variant tracking-wider">Strategie &amp; Reżimy</h3>
+                        </header>
+                        <div class="space-y-5">
+                            <div>
+                                <label class="font-label-sm text-label-sm text-on-surface-variant block mb-3">Aktywne strategie</label>
+                                <div class="space-y-2">
+                                    <label class="flex items-center gap-3 p-2 rounded hover:bg-surface-container-high cursor-pointer transition-colors border border-transparent hover:border-surface-variant">
+                                        <input id="settings-strat-macd" checked class="form-checkbox bg-surface-container-lowest border-surface-variant text-primary rounded focus:ring-primary w-4 h-4" type="checkbox"/>
+                                        <span class="font-data-mono text-data-mono text-on-surface">MTF_MACD_Elder</span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="border-t border-surface-container-highest pt-4">
+                                <div class="flex items-center justify-between mb-2">
+                                    <label class="font-body-md text-body-md font-medium text-on-surface flex items-center gap-2">
+                                        Meta-Labeling ML
+                                        <span id="settings-ml-badge" class="px-1.5 py-0.5 rounded-sm bg-primary-container text-on-primary-container font-label-sm text-[10px] uppercase font-bold tracking-widest">Enabled</span>
+                                    </label>
+                                    <span class="font-data-mono text-data-mono text-primary text-sm">XGBoost</span>
+                                </div>
+                                <div class="flex items-center justify-between bg-surface-container-lowest border border-surface-container-highest rounded px-3 py-2 mt-2">
+                                    <span class="font-label-sm text-label-sm text-on-surface-variant">Confidence Threshold</span>
+                                    <input id="settings-ml-conf" class="w-16 bg-transparent border-none p-0 font-data-mono text-data-mono text-on-surface text-right focus:ring-0" type="text" value="0.55"/>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== TAB 4: STATISTICS ==================== -->
+        <div id="tab-stats" class="tab-content flex-1 overflow-y-auto p-gutter md:p-container-margin space-y-gutter hidden">
+            <!-- 1. Key Performance Indicators (KPIs) -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-gutter">
+                <!-- Sharpe Ratio Card -->
+                <div class="bg-surface-container-highest border border-surface-bright rounded p-component-padding-md flex flex-col justify-between relative overflow-hidden">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="text-label-sm font-label-sm text-on-surface-variant uppercase mb-1">Wskaźnik Sharpe'a</h3>
+                            <span id="stats-sharpe" class="text-[28px] leading-tight font-headline-lg font-bold text-on-surface">-</span>
+                        </div>
+                        <div class="w-8 h-8 rounded bg-primary/10 flex items-center justify-center border border-primary/20">
+                            <span class="material-symbols-outlined text-[18px] text-primary">analytics</span>
+                        </div>
+                    </div>
+                    <div class="text-[12px] text-on-surface-variant mt-3 leading-tight">
+                        Wskaźnik Sharpe'a (skalowany dziennie). Optymalny cel: > 1.50.
+                    </div>
+                </div>
+
+                <!-- Profit Factor Card -->
+                <div class="bg-surface-container-highest border border-surface-bright rounded p-component-padding-md flex flex-col justify-between relative overflow-hidden">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="text-label-sm font-label-sm text-on-surface-variant uppercase mb-1">Profit Factor</h3>
+                            <span id="stats-profit-factor" class="text-[28px] leading-tight font-headline-lg font-bold text-on-surface">-</span>
+                        </div>
+                        <div class="w-8 h-8 rounded bg-secondary/10 flex items-center justify-center border border-secondary/20">
+                            <span class="material-symbols-outlined text-[18px] text-secondary">monetization_on</span>
+                        </div>
+                    </div>
+                    <div class="text-[12px] text-on-surface-variant mt-3 leading-tight">
+                        Stosunek łącznych zysków do łącznych strat. Target: > 1.5.
+                    </div>
+                </div>
+
+                <!-- Recovery Factor Card -->
+                <div class="bg-surface-container-highest border border-surface-bright rounded p-component-padding-md flex flex-col justify-between relative overflow-hidden">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="text-label-sm font-label-sm text-on-surface-variant uppercase mb-1">Recovery Factor</h3>
+                            <span id="stats-recovery-factor" class="text-[28px] leading-tight font-headline-lg font-bold text-on-surface">-</span>
+                        </div>
+                        <div class="w-8 h-8 rounded bg-primary/10 flex items-center justify-center border border-primary/20">
+                            <span class="material-symbols-outlined text-[18px] text-primary">healing</span>
+                        </div>
+                    </div>
+                    <div class="text-[12px] text-on-surface-variant mt-3 leading-tight">
+                        Stosunek zysku netto do maksymalnego obsunięcia kapitału.
+                    </div>
+                </div>
+
+                <!-- Win/Loss Count Card -->
+                <div class="bg-surface-container-highest border border-surface-bright rounded p-component-padding-md flex flex-col justify-between relative overflow-hidden">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="text-label-sm font-label-sm text-on-surface-variant uppercase mb-1">Stosunek Wygranych</h3>
+                            <span id="stats-win-loss-ratio" class="text-[28px] leading-tight font-headline-lg font-bold text-on-surface">-</span>
+                        </div>
+                        <div class="w-8 h-8 rounded bg-secondary/10 flex items-center justify-center border border-secondary/20">
+                            <span class="material-symbols-outlined text-[18px] text-secondary">percent</span>
+                        </div>
+                    </div>
+                    <div class="text-[12px] text-on-surface-variant mt-3 leading-tight">
+                        Wygrane: <span id="stats-win-count" class="font-bold text-secondary">0</span> | Przegrane: <span id="stats-loss-count" class="font-bold text-error">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. Detailed Performance Statistics & Holding Time -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-gutter">
+                <!-- Holding Time & General Info -->
+                <div class="bg-surface-container-highest border border-surface-bright rounded p-component-padding-md flex flex-col justify-between">
+                    <div>
+                        <header class="flex items-center gap-2 border-b border-surface-bright pb-3 mb-4">
+                            <span class="material-symbols-outlined text-primary text-[20px]">schedule</span>
+                            <h3 class="text-body-md font-body-md font-semibold text-on-surface">Czas Trzymania i Aktywność</h3>
+                        </header>
+                        <div class="space-y-4">
+                            <div class="flex justify-between items-center py-2 border-b border-surface-bright/50">
+                                <span class="text-body-md text-on-surface-variant">Średni Czas Trzymania Pozycji</span>
+                                <span id="stats-avg-duration" class="font-data-mono text-on-surface font-bold text-lg">-</span>
+                            </div>
+                            <div class="flex justify-between items-center py-2 border-b border-surface-bright/50">
+                                <span class="text-body-md text-on-surface-variant">Łączna Liczba Transakcji</span>
+                                <span id="stats-total-trades" class="font-data-mono text-on-surface font-bold">-</span>
+                            </div>
+                            <div class="flex justify-between items-center py-2 border-b border-surface-bright/50">
+                                <span class="text-body-md text-on-surface-variant">Skuteczność (Win Rate)</span>
+                                <span id="stats-win-rate" class="font-data-mono text-secondary font-bold">-</span>
+                            </div>
+                            <div class="flex justify-between items-center py-2">
+                                <span class="text-body-md text-on-surface-variant">Stopa Zwrotu (Total Return)</span>
+                                <span id="stats-total-return" class="font-data-mono font-bold">-</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Win/Loss PnL Averages -->
+                <div class="bg-surface-container-highest border border-surface-bright rounded p-component-padding-md flex flex-col justify-between">
+                    <div>
+                        <header class="flex items-center gap-2 border-b border-surface-bright pb-3 mb-4">
+                            <span class="material-symbols-outlined text-secondary text-[20px]">show_chart</span>
+                            <h3 class="text-body-md font-body-md font-semibold text-on-surface">Średnie Wyniki i Współczynniki</h3>
+                        </header>
+                        <div class="space-y-4">
+                            <div class="flex justify-between items-center py-2 border-b border-surface-bright/50">
+                                <span class="text-body-md text-on-surface-variant">Średni Zysk z Transakcji</span>
+                                <span id="stats-avg-win" class="font-data-mono text-secondary font-bold">-</span>
+                            </div>
+                            <div class="flex justify-between items-center py-2 border-b border-surface-bright/50">
+                                <span class="text-body-md text-on-surface-variant">Średnia Strata z Transakcji</span>
+                                <span id="stats-avg-loss" class="font-data-mono text-error font-bold">-</span>
+                            </div>
+                            <div class="flex justify-between items-center py-2 border-b border-surface-bright/50">
+                                <span class="text-body-md text-on-surface-variant">Stosunek Średniej Wygranej/Przegranej</span>
+                                <span id="stats-avg-win-loss-ratio" class="font-data-mono text-on-surface font-bold">-</span>
+                            </div>
+                            <div class="flex justify-between items-center py-2">
+                                <span class="text-body-md text-on-surface-variant">Maksymalne Obsunięcie (Drawdown)</span>
+                                <span id="stats-max-drawdown" class="font-data-mono text-error font-bold">-</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. Extremes (Max Win & Max Loss Trades) -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-gutter">
+                <!-- Max Win Trade Card -->
+                <div id="stats-max-win-card" class="bg-surface-container-highest border border-outline-variant/30 rounded p-component-padding-md relative">
+                    <div class="absolute top-0 left-0 w-1 h-full bg-secondary rounded-l"></div>
+                    <header class="flex justify-between items-center border-b border-surface-bright pb-3 mb-4">
+                        <div class="flex items-center gap-2">
+                            <span class="material-symbols-outlined text-secondary">trending_up</span>
+                            <h3 class="text-body-md font-body-md font-semibold text-secondary">Największy Zysk (Max Win)</h3>
+                        </div>
+                        <span id="stats-max-win-time" class="text-[11px] font-data-mono text-on-surface-variant">-</span>
+                    </header>
+                    <div id="stats-max-win-content" class="grid grid-cols-3 gap-4">
+                        <div class="col-span-3 text-center text-on-surface-variant py-4">Brak danych transakcyjnych</div>
+                    </div>
+                </div>
+
+                <!-- Max Loss Trade Card -->
+                <div id="stats-max-loss-card" class="bg-surface-container-highest border border-outline-variant/30 rounded p-component-padding-md relative">
+                    <div class="absolute top-0 left-0 w-1 h-full bg-error rounded-l"></div>
+                    <header class="flex justify-between items-center border-b border-surface-bright pb-3 mb-4">
+                        <div class="flex items-center gap-2">
+                            <span class="material-symbols-outlined text-error">trending_down</span>
+                            <h3 class="text-body-md font-body-md font-semibold text-error">Największa Strata (Max Loss)</h3>
+                        </div>
+                        <span id="stats-max-loss-time" class="text-[11px] font-data-mono text-on-surface-variant">-</span>
+                    </header>
+                    <div id="stats-max-loss-content" class="grid grid-cols-3 gap-4">
+                        <div class="col-span-3 text-center text-on-surface-variant py-4">Brak danych transakcyjnych</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3.5. Statystyki Poślizgu (Slippage & Adverse Selection) -->
+            <div class="bg-surface-container-highest border border-surface-bright rounded p-component-padding-md">
+                <header class="flex items-center gap-2 border-b border-surface-bright pb-3 mb-4">
+                    <span class="material-symbols-outlined text-primary text-[20px]">swap_horiz</span>
+                    <h3 class="text-body-md font-body-md font-semibold text-on-surface">Analiza Poślizgu (Slippage & Adverse Selection)</h3>
+                </header>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="text-label-sm uppercase text-on-surface-variant border-b border-surface-bright">
+                                <th class="pb-3 font-semibold">Instrument</th>
+                                <th class="pb-3 font-semibold text-right">Śr. Poślizg Wejścia</th>
+                                <th class="pb-3 font-semibold text-right">Śr. Poślizg Wyjścia</th>
+                                <th class="pb-3 font-semibold text-right">Śr. Poślizg Całkowity</th>
+                                <th class="pb-3 font-semibold text-center">Śledzone Transakcje</th>
+                            </tr>
+                        </thead>
+                        <tbody id="stats-slippage-tbody" class="text-body-md divide-y divide-surface-bright/50">
+                            <tr>
+                                <td colspan="5" class="py-4 text-center text-on-surface-variant">Ładowanie statystyk poślizgu...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 4. Data Export Controls -->
+            <div class="bg-surface-container-highest border border-surface-bright rounded p-component-padding-md">
+                <header class="flex items-center gap-2 border-b border-surface-bright pb-3 mb-4">
+                    <span class="material-symbols-outlined text-primary text-[20px]">download</span>
+                    <h3 class="text-body-md font-body-md font-semibold text-on-surface">Eksport Historii Transakcji</h3>
+                </header>
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <p class="text-body-md text-on-surface-variant max-w-2xl leading-relaxed">
+                        Pobierz pełną historię zrealizowanych transakcji zapisaną w bazie danych SQLite. Wybierz preferowany format pliku w celu analizy w arkuszach kalkulacyjnych (np. Excel) lub zewnętrznych systemach.
+                    </p>
+                    <div class="flex gap-4 shrink-0 w-full sm:w-auto">
+                        <button onclick="exportData('csv')" class="flex-1 sm:flex-initial bg-surface-container border border-outline-variant hover:bg-surface-container-high hover:border-primary text-on-surface font-semibold py-2 px-6 rounded transition-colors flex items-center justify-center gap-2">
+                            <span class="material-symbols-outlined text-[18px]">table_view</span> Pobierz CSV
+                        </button>
+                        <button onclick="exportData('json')" class="flex-1 sm:flex-initial bg-primary text-on-primary hover:bg-primary-container font-semibold py-2 px-6 rounded transition-colors flex items-center justify-center gap-2">
+                            <span class="material-symbols-outlined text-[18px]">code</span> Pobierz JSON
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ==================== FRONTEND JAVASCRIPT ==================== -->
+    <script>
+        // API Configuration
+        const API_BASE = ""; // Relative to server
+        let activeTab = "overview";
+        let logsFilterLevel = "ALL";
+        let logsSearchQuery = "";
+        let fullLogsCache = [];
+        let configDataCache = {};
+        window.chartData = {
+            equities: [],
+            trades: [],
+            minEq: 10000,
+            maxEq: 10000,
+            range: 200,
+            step: 1
+        };
+
+        // Tab Switching Logic
+        function switchTab(tabId) {
+            activeTab = tabId;
+            document.querySelectorAll(".tab-content").forEach(el => el.classList.add("hidden"));
+            document.getElementById(`tab-${tabId}`).classList.remove("hidden");
+
+            // Update Sidebar styling
+            const navIds = ["overview", "stats", "logs", "settings"];
+            navIds.forEach(id => {
+                const btn = document.getElementById(`nav-${id}`);
+                if (btn) {
+                    if (id === tabId) {
+                        btn.className = "w-full flex items-center gap-3 px-3 py-2 text-primary font-bold border-r-2 border-primary bg-surface-container translate-x-1 transition-transform rounded-sm";
+                    } else {
+                        btn.className = "w-full flex items-center gap-3 px-3 py-2 text-on-surface-variant font-medium hover:bg-surface-container-high transition-colors rounded-sm";
+                    }
+                }
+            });
+
+            // Update mobile and head headers
+            const titles = {
+                overview: "Panel Główny",
+                stats: "Statystyki Systemu",
+                logs: "Logi Systemowe",
+                settings: "Ustawienia Systemowe"
+            };
+            document.getElementById("mobile-title").textContent = titles[tabId];
+
+            if (tabId === "logs") {
+                // Auto scroll logs when showing
+                setTimeout(() => {
+                    const term = document.getElementById("terminal-content");
+                    term.scrollTop = term.scrollHeight;
+                }, 50);
+            }
+            if (tabId === "stats") {
+                fetchAnalytics();
+            }
+        }
+
+        // Display Toast Notification
+        function showToast(message, type = "info") {
+            const container = document.getElementById("toast-container");
+            const toast = document.createElement("div");
+            toast.className = `toast px-6 py-3 rounded shadow-lg text-white font-medium mb-3 pointer-events-auto flex items-center gap-2 ${
+                type === "success" ? "bg-secondary-container text-on-secondary-container" :
+                type === "error" ? "bg-error-container text-on-error-container border border-error" : "bg-surface-container-high"
+            }`;
+            
+            let icon = "info";
+            if (type === "success") icon = "check_circle";
+            if (type === "error") icon = "error";
+
+            toast.innerHTML = `
+                <span class="material-symbols-outlined text-[18px]">${icon}</span>
+                <span>${message}</span>
+            `;
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.remove();
+            }, 3000);
+        }
+
+        // Fetch and Update Status
+        async function fetchStatus() {
+            try {
+                const res = await fetch(`${API_BASE}/api/status`);
+                if (!res.ok) throw new Error("Status API failed");
+                const data = await res.json();
+                
+                configDataCache = data.config || {};
+                updateStatusUI(data);
+            } catch (err) {
+                console.error("Error fetching status:", err);
+            }
+        }
+
+        function updateStatusUI(data) {
+            // Header stats
+            const statusBadge = document.getElementById("status-badge");
+            const navStatusIndicator = document.getElementById("nav-status-indicator");
+            const navStatusText = document.getElementById("nav-status-text");
+
+            if (data.running) {
+                statusBadge.className = "flex items-center gap-2 bg-secondary/10 border border-secondary/30 px-3 py-1 rounded-full text-secondary font-label-sm transition-colors hover:bg-secondary/20";
+                statusBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-secondary shadow-[0_0_5px_rgba(78,222,163,0.8)]"></span> Aktywny`;
+                navStatusIndicator.className = "w-2 h-2 rounded-full bg-secondary";
+                navStatusText.textContent = "Aktywny";
+            } else {
+                statusBadge.className = "flex items-center gap-2 bg-error/10 border border-error/30 px-3 py-1 rounded-full text-error font-label-sm transition-colors hover:bg-error/20";
+                statusBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-error shadow-[0_0_5px_rgba(255,180,171,0.8)]"></span> Zatrzymany`;
+                navStatusIndicator.className = "w-2 h-2 rounded-full bg-error";
+                navStatusText.textContent = "Zatrzymany";
+            }
+
+            document.getElementById("mode-badge").textContent = `${data.mode} TRADING`;
+            document.getElementById("exchange-info").textContent = `${data.exchange.toUpperCase()} | ${data.ws_inst_type}`;
+            document.getElementById("ping-text").textContent = `${data.ping}ms`;
+
+            // Real-time Tickers rendering
+            const tickers = data.tickers || {};
+            
+            // Render header tickers
+            const headerTickersEl = document.getElementById("header-tickers");
+            if (headerTickersEl) {
+                if (Object.keys(tickers).length === 0) {
+                    headerTickersEl.innerHTML = `<span class="text-on-surface-variant">Brak połączenia z tickerami</span>`;
+                } else {
+                    headerTickersEl.innerHTML = Object.entries(tickers).map(([sym, t]) => {
+                        const cleanSym = sym.split("/")[0];
+                        const sign = t.change_24h_pct >= 0 ? "+" : "";
+                        const changeColor = t.change_24h_pct >= 0 ? "text-secondary" : "text-error";
+                        return `
+                            <div class="flex items-center gap-1 border-r border-outline-variant/30 pr-4 last:border-0">
+                                <span class="font-bold text-on-surface">${cleanSym}:</span>
+                                <span class="text-primary font-bold font-data-mono">$${t.last_price.toLocaleString('pl-PL', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                <span class="${changeColor} font-bold text-[12px]">(${sign}${t.change_24h_pct.toFixed(2)}%)</span>
+                            </div>
+                        `;
+                    }).join('');
+                }
+            }
+
+            // Render asset list grid in Overview
+            const tickersGridEl = document.getElementById("metric-tickers-grid");
+            if (tickersGridEl) {
+                if (Object.keys(tickers).length === 0) {
+                    tickersGridEl.innerHTML = `<span class="col-span-2 text-on-surface-variant text-center py-2">Brak danych</span>`;
+                } else {
+                    tickersGridEl.innerHTML = Object.entries(tickers).map(([sym, t]) => {
+                        const cleanSym = sym.split("/")[0];
+                        const sign = t.change_24h_pct >= 0 ? "+" : "";
+                        const changeColor = t.change_24h_pct >= 0 ? "text-secondary" : "text-error";
+                        return `
+                            <div class="flex justify-between items-center bg-surface-container-low/50 border border-outline-variant/20 rounded p-2">
+                                <div>
+                                    <span class="font-bold text-on-surface block text-sm">${cleanSym}</span>
+                                    <span class="text-primary font-bold font-data-mono text-sm">$${t.last_price.toLocaleString('pl-PL', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                </div>
+                                <div class="text-right">
+                                    <span class="${changeColor} font-bold text-sm block">${sign}${t.change_24h_pct.toFixed(2)}%</span>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                }
+            }
+
+            // Financial Metrics
+            document.getElementById("metric-equity").textContent = `$${data.equity.toLocaleString('pl-PL', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+            document.getElementById("metric-balance").textContent = `$${data.balance.toLocaleString('pl-PL', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+            
+            window.initialCapital = data.initial_capital;
+            const totalPnL = data.equity - data.initial_capital;
+            const totalPnLPct = (totalPnL / data.initial_capital) * 100;
+            const pnlEl = document.getElementById("metric-pnl");
+            const pnlPctEl = document.getElementById("metric-pnl-pct");
+            
+            if (totalPnL >= 0) {
+                pnlEl.textContent = `+$${totalPnL.toLocaleString('pl-PL', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                pnlEl.className = "text-[28px] leading-tight font-headline-lg font-bold text-secondary";
+                pnlPctEl.textContent = `(+${totalPnLPct.toFixed(2)}%)`;
+                pnlPctEl.className = "text-data-mono font-data-mono text-secondary";
+            } else {
+                pnlEl.textContent = `-$${Math.abs(totalPnL).toLocaleString('pl-PL', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                pnlEl.className = "text-[28px] leading-tight font-headline-lg font-bold text-error";
+                pnlPctEl.textContent = `(${totalPnLPct.toFixed(2)}%)`;
+                pnlPctEl.className = "text-data-mono font-data-mono text-error";
+            }
+
+            document.getElementById("metric-drawdown").textContent = `${data.stats.max_drawdown.toFixed(1)}%`;
+            document.getElementById("metric-winrate").textContent = `${data.stats.win_rate.toFixed(1)}%`;
+            document.getElementById("metric-trades-count").textContent = data.stats.total_trades;
+
+            // Render Active Positions
+            const posContainer = document.getElementById("positions-container");
+            if (posContainer) {
+                const positions = data.active_positions || [];
+                if (positions.length === 0) {
+                    posContainer.innerHTML = `
+                        <div id="position-card" class="bg-surface-container-highest border border-outline-variant rounded p-component-padding-md relative">
+                            <div id="position-border" class="absolute top-0 left-0 w-1 h-full bg-outline-variant rounded-l"></div>
+                            <div class="flex justify-between items-start mb-4">
+                                <div>
+                                    <h3 class="text-label-sm font-label-sm text-on-surface-variant uppercase mb-2">Aktywne Pozycje</h3>
+                                    <div class="flex items-center gap-3">
+                                        <span id="position-side" class="flex items-center gap-1 px-2 py-0.5 bg-outline-variant text-on-surface-variant border border-outline-variant rounded text-label-sm font-label-sm font-bold">
+                                            BRAK POZYCJI
+                                        </span>
+                                        <span id="position-size" class="text-headline-md font-headline-md text-on-surface-variant">Brak aktywnego zlecenia</span>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <h3 class="text-label-sm font-label-sm text-on-surface-variant uppercase mb-1">Niezrealizowany PnL</h3>
+                                    <span id="position-pnl" class="text-headline-lg font-headline-lg font-bold text-on-surface-variant">-</span>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-3 gap-4 border-t border-surface-bright pt-4 mt-2">
+                                <div>
+                                    <div class="text-label-sm text-on-surface-variant mb-1">Wejście vs Obecna</div>
+                                    <div id="position-prices" class="text-data-mono text-on-surface-variant font-medium">-</div>
+                                </div>
+                                <div>
+                                    <div class="text-label-sm text-on-surface-variant mb-1">Take Profit (TP)</div>
+                                    <div id="position-tp" class="text-data-mono text-on-surface-variant font-medium">-</div>
+                                </div>
+                                <div>
+                                    <div class="text-label-sm text-on-surface-variant mb-1">Stop Loss (SL)</div>
+                                    <div id="position-sl" class="text-data-mono text-on-surface-variant font-medium">-</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    posContainer.innerHTML = positions.map(pos => {
+                        const isLong = pos.side === "LONG";
+                        
+                        // Try to get current price from tickers
+                        const tick = tickers[pos.symbol] || {last_price: pos.entry_price};
+                        const currPrice = tick.last_price > 0 ? tick.last_price : pos.entry_price;
+                        
+                        const grossRet = isLong 
+                            ? (currPrice - pos.entry_price) / pos.entry_price 
+                            : (pos.entry_price - currPrice) / pos.entry_price;
+                            
+                        const uPnl = pos.size * pos.entry_price * grossRet;
+                        const uPnlPct = grossRet * 100;
+                        const cleanSym = pos.symbol.split("/")[0];
+                        
+                        // stop loss / take profit estimation if not sent from server
+                        const slPrice = isLong ? pos.entry_price * 0.97 : pos.entry_price * 1.03;
+                        const tpPrice = isLong ? pos.entry_price * 1.08 : pos.entry_price * 0.92;
+
+                        return `
+                            <div class="bg-surface-container-highest border border-primary/30 rounded p-component-padding-md relative">
+                                <div class="absolute top-0 left-0 w-1 h-full bg-primary rounded-l"></div>
+                                <div class="flex justify-between items-start mb-4">
+                                    <div>
+                                        <h3 class="text-label-sm font-label-sm text-on-surface-variant uppercase mb-2">Aktywna Pozycja: ${cleanSym}</h3>
+                                        <div class="flex items-center gap-3">
+                                            <span class="flex items-center gap-1 px-2 py-0.5 ${isLong ? 'bg-secondary/20 text-secondary border-secondary/30' : 'bg-error/20 text-error border-error/30'} border rounded text-label-sm font-label-sm font-bold">
+                                                <span class="material-symbols-outlined text-[14px]">${isLong ? 'arrow_upward' : 'arrow_downward'}</span> ${pos.side}
+                                            </span>
+                                            <span class="text-headline-md font-headline-md text-on-surface">Wielkość: ${pos.size.toFixed(5)} ${cleanSym}</span>
+                                        </div>
+                                    </div>
+                                    <div class="text-right">
+                                        <h3 class="text-label-sm font-label-sm text-on-surface-variant uppercase mb-1">Niezrealizowany PnL</h3>
+                                        <span class="text-headline-lg font-headline-lg font-bold ${uPnl >= 0 ? 'text-secondary' : 'text-error'} blink">
+                                            ${uPnl >= 0 ? '+' : ''}$${uPnl.toFixed(2)} (${uPnlPct.toFixed(2)}%)
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-3 gap-4 border-t border-surface-bright pt-4 mt-2">
+                                    <div>
+                                        <div class="text-label-sm text-on-surface-variant mb-1">Wejście vs Obecna</div>
+                                        <div class="text-data-mono text-on-surface font-medium">$${pos.entry_price.toLocaleString('pl-PL', {maximumFractionDigits:2})} → $${currPrice.toLocaleString('pl-PL', {maximumFractionDigits:2})}</div>
+                                    </div>
+                                    <div>
+                                        <div class="text-label-sm text-on-surface-variant mb-1">Take Profit (TP)</div>
+                                        <div class="text-data-mono text-secondary font-medium">$${tpPrice.toLocaleString('pl-PL', {maximumFractionDigits:2})}</div>
+                                    </div>
+                                    <div>
+                                        <div class="text-label-sm text-on-surface-variant mb-1">Stop Loss (SL)</div>
+                                        <div class="text-data-mono text-error font-medium">$${slPrice.toLocaleString('pl-PL', {maximumFractionDigits:2})}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                }
+            }
+
+            // Circuit Breaker UI
+            const breakerCard = document.getElementById("breaker-card");
+            const breakerStatus = document.getElementById("breaker-status");
+            const breakerReason = document.getElementById("breaker-reason");
+
+            if (data.circuit_breaker.state === "HALTED" || data.circuit_breaker.manual_halted) {
+                breakerCard.className = "bg-surface-container-highest border border-error rounded p-component-padding-md relative overflow-hidden pulse-red";
+                breakerStatus.className = "text-headline-lg font-headline-lg text-error font-bold";
+                breakerStatus.textContent = "ZATRZYMANY";
+                breakerReason.className = "text-body-md text-on-error-container mb-4 font-semibold";
+                breakerReason.textContent = `Powód: ${data.circuit_breaker.reason || 'Aktywacja manualna błędu bota'}`;
+            } else {
+                breakerCard.className = "bg-surface-container-highest border border-outline-variant rounded p-component-padding-md relative overflow-hidden";
+                breakerStatus.className = "text-headline-lg font-headline-lg text-secondary font-bold";
+                breakerStatus.textContent = "NORMALNY";
+                breakerReason.className = "text-body-md text-on-surface-variant mb-4 font-medium";
+                breakerReason.textContent = "System działa bez ograniczeń i skanuje rynek.";
+            }
+
+            // Proximity UI updates with symbol selector tabs
+            const proximities = data.proximities || {};
+            const symbolsList = Object.keys(proximities);
+            
+            if (symbolsList.length > 0) {
+                if (!window.currentProximitySymbol || !symbolsList.includes(window.currentProximitySymbol)) {
+                    window.currentProximitySymbol = symbolsList[0];
+                }
+                
+                // Draw Tabs
+                const tabContainer = document.getElementById("proximity-tabs");
+                if (tabContainer) {
+                    if (tabContainer.children.length !== symbolsList.length) {
+                        tabContainer.innerHTML = "";
+                        symbolsList.forEach(sym => {
+                            const btn = document.createElement("button");
+                            const cleanName = sym.split("/")[0];
+                            btn.className = `px-3 py-1 text-label-sm rounded transition-colors font-bold ${
+                                sym === window.currentProximitySymbol 
+                                ? 'bg-primary text-on-primary shadow' 
+                                : 'bg-surface-container border border-outline-variant hover:bg-surface-container-highest text-on-surface-variant'
+                            }`;
+                            btn.textContent = cleanName;
+                            btn.onclick = () => {
+                                window.currentProximitySymbol = sym;
+                                updateStatusUI(data); // Redraw tabs & indicators immediately
+                            };
+                            tabContainer.appendChild(btn);
+                        });
+                    } else {
+                        Array.from(tabContainer.children).forEach((btn, idx) => {
+                            const sym = symbolsList[idx];
+                            btn.className = `px-3 py-1 text-label-sm rounded transition-colors font-bold ${
+                                sym === window.currentProximitySymbol 
+                                ? 'bg-primary text-on-primary shadow' 
+                                : 'bg-surface-container border border-outline-variant hover:bg-surface-container-highest text-on-surface-variant'
+                            }`;
+                        });
+                    }
+                }
+                
+                // Render indicators for the selected symbol
+                const pm = proximities[window.currentProximitySymbol]?.mtf_macd;
+                if (pm) {
+                    const trendEl = document.getElementById("prox-macd-d1-trend");
+                    trendEl.textContent = pm.d1_trend;
+                    if (pm.d1_trend === "UP") {
+                        trendEl.className = "px-2 py-0.5 rounded text-label-sm font-bold bg-secondary/20 text-secondary border border-secondary/30";
+                    } else if (pm.d1_trend === "DOWN") {
+                        trendEl.className = "px-2 py-0.5 rounded text-label-sm font-bold bg-error/20 text-error border border-error/30";
+                    } else {
+                        trendEl.className = "px-2 py-0.5 rounded text-label-sm font-bold bg-surface-variant text-on-surface-variant border border-outline-variant";
+                    }
+                    
+                    document.getElementById("prox-macd-hist-val").textContent = pm.macd_hist.toFixed(2);
+                    if (pm.macd_hist > 0) {
+                        document.getElementById("prox-macd-hist-val").className = "font-data-mono text-secondary font-bold";
+                    } else if (pm.macd_hist < 0) {
+                        document.getElementById("prox-macd-hist-val").className = "font-data-mono text-error font-bold";
+                    } else {
+                        document.getElementById("prox-macd-hist-val").className = "font-data-mono text-on-surface-variant font-bold";
+                    }
+
+                    let histPct = 0;
+                    if (pm.macd_signal !== 0) {
+                        histPct = (pm.macd_hist / Math.abs(pm.macd_signal)) * 100;
+                    }
+                    histPct = Math.max(-100, Math.min(100, histPct));
+                    const histBar = document.getElementById("prox-macd-hist-bar");
+                    if (histPct >= 0) {
+                        histBar.style.width = (histPct / 2) + "%";
+                        histBar.style.marginLeft = "50%";
+                        histBar.className = "h-full bg-secondary transition-all duration-300";
+                    } else {
+                        histBar.style.width = (Math.abs(histPct) / 2) + "%";
+                        histBar.style.marginLeft = (50 - Math.abs(histPct)/2) + "%";
+                        histBar.className = "h-full bg-error transition-all duration-300";
+                    }
+                    
+                    if (pm.require_volume) {
+                        document.getElementById("prox-macd-volume-container").style.display = "block";
+                        const volRatio = pm.volume_sma_ratio;
+                        document.getElementById("prox-macd-volume-val").textContent = `${volRatio.toFixed(2)}x`;
+                        const volPct = Math.min(100, (volRatio / pm.volume_mult) * 100);
+                        const volBar = document.getElementById("prox-macd-volume-bar");
+                        volBar.style.width = volPct + "%";
+                        if (volRatio >= pm.volume_mult) {
+                            volBar.className = "h-full bg-secondary transition-all duration-300";
+                            document.getElementById("prox-macd-volume-val").className = "font-data-mono font-bold text-secondary";
+                        } else {
+                            volBar.className = "h-full bg-primary-container transition-all duration-300";
+                            document.getElementById("prox-macd-volume-val").className = "font-data-mono font-bold text-on-surface-variant";
+                        }
+                        document.getElementById("prox-macd-volume-target").textContent = `Próg: ${pm.volume_mult}x`;
+                    } else {
+                        document.getElementById("prox-macd-volume-container").style.display = "none";
+                    }
+                }
+                
+                // Update Entry Checklist Criteria dynamically
+                const regimeMeta = data.regimes ? data.regimes[window.currentProximitySymbol] : null;
+                const isTrending = regimeMeta && regimeMeta.regime === "trending";
+                const isCbNormal = data.circuit_breaker.state === "NORMAL" && !data.circuit_breaker.manual_halted;
+                const isD1Active = pm.d1_trend === "UP" || pm.d1_trend === "DOWN";
+                const isVolumeOk = !pm.require_volume || (pm.volume_sma_ratio >= pm.volume_mult);
+                
+                // 1. Circuit Breaker
+                const elCb = document.getElementById("checklist-cb");
+                if (isCbNormal) {
+                    elCb.className = "flex items-center gap-1.5 font-bold text-secondary text-label-sm";
+                    elCb.innerHTML = `<span class="material-symbols-outlined text-[16px] text-secondary">check_circle</span> SPEŁNIONY`;
+                } else {
+                    elCb.className = "flex items-center gap-1.5 font-bold text-error text-label-sm";
+                    elCb.innerHTML = `<span class="material-symbols-outlined text-[16px] text-error">cancel</span> BLOKADA`;
+                }
+
+                // 2. Regime
+                const elRegime = document.getElementById("checklist-regime");
+                if (isTrending) {
+                    elRegime.className = "flex items-center gap-1.5 font-bold text-secondary text-label-sm";
+                    elRegime.innerHTML = `<span class="material-symbols-outlined text-[16px] text-secondary">check_circle</span> SPEŁNIONY`;
+                } else {
+                    const regimeName = regimeMeta ? regimeMeta.regime.toUpperCase() : "BRAK TRENDU";
+                    elRegime.className = "flex items-center gap-1.5 font-bold text-error text-label-sm";
+                    elRegime.innerHTML = `<span class="material-symbols-outlined text-[16px] text-error">cancel</span> ${regimeName}`;
+                }
+
+                // 3. D1 Trend
+                const elD1 = document.getElementById("checklist-d1");
+                if (isD1Active) {
+                    elD1.className = "flex items-center gap-1.5 font-bold text-secondary text-label-sm";
+                    elD1.innerHTML = `<span class="material-symbols-outlined text-[16px] text-secondary">check_circle</span> SPEŁNIONY (${pm.d1_trend})`;
+                } else {
+                    elD1.className = "flex items-center gap-1.5 font-bold text-error text-label-sm";
+                    elD1.innerHTML = `<span class="material-symbols-outlined text-[16px] text-error">cancel</span> FLAT`;
+                }
+
+                // 4. Volume
+                const elVol = document.getElementById("checklist-volume");
+                if (isVolumeOk) {
+                    elVol.className = "flex items-center gap-1.5 font-bold text-secondary text-label-sm";
+                    elVol.innerHTML = `<span class="material-symbols-outlined text-[16px] text-secondary">check_circle</span> SPEŁNIONY`;
+                } else {
+                    elVol.className = "flex items-center gap-1.5 font-bold text-primary-container text-label-sm";
+                    elVol.innerHTML = `<span class="material-symbols-outlined text-[16px] text-primary-container">warning</span> SŁABY WOLUMEN`;
+                }
+
+                // 5. Final Decision status
+                const elDecision = document.getElementById("checklist-decision");
+                if (!isCbNormal) {
+                    elDecision.className = "px-2 py-0.5 rounded text-label-sm font-bold bg-error/20 text-error border border-error/30";
+                    elDecision.textContent = "BLOKADA SYSTEMU";
+                } else if (!isTrending) {
+                    elDecision.className = "px-2 py-0.5 rounded text-label-sm font-bold bg-surface-variant text-on-surface-variant border border-outline-variant";
+                    elDecision.textContent = "OCZEKIWANIE NA TREND";
+                } else if (!isD1Active) {
+                    elDecision.className = "px-2 py-0.5 rounded text-label-sm font-bold bg-surface-variant text-on-surface-variant border border-outline-variant";
+                    elDecision.textContent = "FILTR D1: FLAT";
+                } else if (!isVolumeOk) {
+                    elDecision.className = "px-2 py-0.5 rounded text-label-sm font-bold bg-primary/20 text-primary border border-primary/30";
+                    elDecision.textContent = "BLOKADA WOLUMENU";
+                } else {
+                    // Check crossovers
+                    if (pm.macd_hist > 0 && pm.macd_cross === 1) {
+                        elDecision.className = "px-2 py-0.5 rounded text-label-sm font-bold bg-secondary text-on-secondary animate-pulse";
+                        elDecision.textContent = "SYGNAŁ LONG!";
+                    } else if (pm.macd_hist < 0 && pm.macd_cross === -1) {
+                        elDecision.className = "px-2 py-0.5 rounded text-label-sm font-bold bg-error text-on-error animate-pulse";
+                        elDecision.textContent = "SYGNAŁ SHORT!";
+                    } else {
+                        const targetSide = pm.d1_trend === "UP" ? "LONG" : "SHORT";
+                        elDecision.className = "px-2 py-0.5 rounded text-label-sm font-bold bg-secondary/10 text-secondary border border-secondary/30";
+                        elDecision.textContent = `OCZEKIWANIE NA CROSSOVER ${targetSide}`;
+                    }
+                }
+
+                // Update regime description in safe breaker card for selected symbol
+                if (regimeMeta && data.circuit_breaker.state !== "HALTED" && !data.circuit_breaker.manual_halted) {
+                    const cleanName = window.currentProximitySymbol.split("/")[0];
+                    breakerReason.textContent = `${cleanName} Reżim: ${regimeMeta.regime ? regimeMeta.regime.toUpperCase() : 'UNKNOWN'} (ADX: ${regimeMeta.adx ? regimeMeta.adx.toFixed(1) : '-'}, BBw: ${regimeMeta.bb_width ? regimeMeta.bb_width.toFixed(3) : '-'})`;
+                } else if (data.circuit_breaker.state !== "HALTED" && !data.circuit_breaker.manual_halted) {
+                    breakerReason.textContent = "System działa bez ograniczeń i skanuje rynek.";
+                }
+            }
+
+            // Write inputs to Settings fields once on initial load
+            if (Object.keys(configDataCache).length > 0 && !window.settingsInitialized) {
+                populateSettingsForm(data);
+                window.settingsInitialized = true;
+            }
+        }
+
+        // Populate Settings Fields
+        function populateSettingsForm(data) {
+            const risk = data.config.risk || {};
+            const strats = data.config.strategies || {};
+            const ml = data.config.meta_labeling || {};
+            const tg = data.config.telegram || {};
+
+            // Credentials
+            document.getElementById("settings-tg-token").value = tg.bot_token || "";
+            document.getElementById("settings-tg-chatid").value = tg.chat_id || "";
+
+            // Risk Settings
+            document.getElementById("settings-risk-initial").value = data.initial_capital;
+            document.getElementById("settings-risk-method").value = risk.position_sizing ? risk.position_sizing.method : "half_kelly";
+            document.getElementById("settings-risk-maxrisk").value = risk.position_sizing ? risk.position_sizing.max_risk_per_trade_pct : "2.0";
+            document.getElementById("settings-risk-sl").value = risk.per_trade ? risk.per_trade.stop_loss_pct : "3.0";
+            document.getElementById("settings-risk-tp").value = risk.per_trade ? risk.per_trade.take_profit_pct : "8.0";
+            document.getElementById("settings-risk-trail-act").value = risk.per_trade ? risk.per_trade.trailing_stop_activation : "3.0";
+            document.getElementById("settings-risk-trail-dist").value = risk.per_trade ? risk.per_trade.trailing_stop_distance : "1.5";
+
+            // Breakers Settings
+            document.getElementById("settings-cb-consec").value = risk.circuit_breaker ? risk.circuit_breaker.consecutive_loss_halt : "5";
+            document.getElementById("settings-cb-daily").value = risk.circuit_breaker ? risk.circuit_breaker.daily_loss_limit_pct : "5.0";
+            document.getElementById("settings-cb-drawdown").value = risk.circuit_breaker ? risk.circuit_breaker.max_drawdown_pct : "20.0";
+
+            // Strategies
+            document.getElementById("settings-strat-macd").checked = strats.mtf_macd_elder ? strats.mtf_macd_elder.enabled : true;
+            
+            // Machine Learning
+            const mlEnabled = ml.enabled || false;
+            document.getElementById("settings-ml-badge").textContent = mlEnabled ? "Enabled" : "Disabled";
+            document.getElementById("settings-ml-badge").className = `px-1.5 py-0.5 rounded-sm ${mlEnabled ? 'bg-primary-container text-on-primary-container' : 'bg-surface-container-highest text-on-surface-variant'} font-label-sm text-[10px] uppercase font-bold tracking-widest`;
+            document.getElementById("settings-ml-conf").value = ml.min_confidence || "0.55";
+        }
+
+        // Save Settings via POST Request
+        async function saveSettings() {
+            try {
+                const payload = {
+                    telegram: {
+                        bot_token: document.getElementById("settings-tg-token").value,
+                        chat_id: document.getElementById("settings-tg-chatid").value
+                    },
+                    risk: {
+                        position_sizing: {
+                            method: document.getElementById("settings-risk-method").value,
+                            max_risk_per_trade_pct: parseFloat(document.getElementById("settings-risk-maxrisk").value),
+                            max_position_size_btc: configDataCache.risk?.position_sizing?.max_position_size_btc || 0.1,
+                            max_total_exposure_pct: configDataCache.risk?.position_sizing?.max_total_exposure_pct || 50
+                        },
+                        circuit_breaker: {
+                            max_drawdown_pct: parseFloat(document.getElementById("settings-cb-drawdown").value),
+                            daily_loss_limit_pct: parseFloat(document.getElementById("settings-cb-daily").value),
+                            weekly_loss_limit_pct: configDataCache.risk?.circuit_breaker?.weekly_loss_limit_pct || 10,
+                            consecutive_loss_halt: parseInt(document.getElementById("settings-cb-consec").value),
+                            consecutive_loss_warn: configDataCache.risk?.circuit_breaker?.consecutive_loss_warn || 3,
+                            volatility_circuit_mult: configDataCache.risk?.circuit_breaker?.volatility_circuit_mult || 5.0
+                        },
+                        per_trade: {
+                            stop_loss_pct: parseFloat(document.getElementById("settings-risk-sl").value),
+                            take_profit_pct: parseFloat(document.getElementById("settings-risk-tp").value),
+                            trailing_stop_activation: parseFloat(document.getElementById("settings-risk-trail-act").value),
+                            trailing_stop_distance: parseFloat(document.getElementById("settings-risk-trail-dist").value),
+                            volatility_stop_mult: configDataCache.risk?.per_trade?.volatility_stop_mult || 2.0,
+                            max_duration_hours: configDataCache.risk?.per_trade?.max_duration_hours || 48,
+                            cooldown_minutes: configDataCache.risk?.per_trade?.cooldown_minutes || 60
+                        }
+                    },
+                    strategies: {
+                        mtf_macd_elder: {
+                            enabled: document.getElementById("settings-strat-macd").checked,
+                            macd: configDataCache.strategies?.mtf_macd_elder?.macd || {fast: 8, slow: 21, signal: 9},
+                            elder_filter: configDataCache.strategies?.mtf_macd_elder?.elder_filter || {enabled: true, higher_tf: "1d"},
+                            exit: configDataCache.strategies?.mtf_macd_elder?.exit || {method: "trailing_candle"}
+                        },
+                        mean_reversion: {
+                            enabled: false,
+                            rsi: configDataCache.strategies?.mean_reversion?.rsi || {period: 14, oversold: 30, overbought: 70},
+                            bollinger: configDataCache.strategies?.mean_reversion?.bollinger || {period: 20, std_dev: 2},
+                            require_both_signals: configDataCache.strategies?.mean_reversion?.require_both_signals || true
+                        }
+                    },
+                    meta_labeling: {
+                        enabled: configDataCache.meta_labeling?.enabled || false,
+                        model: configDataCache.meta_labeling?.model || "xgboost",
+                        training_samples: configDataCache.meta_labeling?.training_samples || 1000,
+                        min_confidence: parseFloat(document.getElementById("settings-ml-conf").value)
+                    }
+                };
+
+                const res = await fetch(`${API_BASE}/api/settings`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+
+                if (res.ok) {
+                    showToast("Ustawienia zostały pomyślnie zapisane i załadowane!", "success");
+                    fetchStatus(); // Refresh config cache
+                } else {
+                    const err = await res.json();
+                    showToast(`Błąd zapisu: ${err.message || 'Unknown'}`, "error");
+                }
+            } catch (err) {
+                console.error("Save settings failed:", err);
+                showToast("Błąd połączenia podczas zapisu ustawień.", "error");
+            }
+        }
+
+        // Reset Circuit Breaker Trigger
+        async function resetBreaker() {
+            try {
+                const res = await fetch(`${API_BASE}/api/reset`, { method: "POST" });
+                if (res.ok) {
+                    showToast("Circuit Breaker został zresetowany. Bot wznawia trading!", "success");
+                    fetchStatus();
+                } else {
+                    showToast("Błąd podczas resetowania bezpiecznika.", "error");
+                }
+            } catch (err) {
+                showToast("Błąd połączenia z API bota.", "error");
+            }
+        }
+
+        // Trigger Emergency Stop
+        async function triggerEmergency() {
+            if (confirm("Czy na pewno chcesz wywołać STOP AWARYJNY? Bot zamknie wszystkie pozycje i zatrzyma działanie!")) {
+                try {
+                    const res = await fetch(`${API_BASE}/api/emergency`, { method: "POST" });
+                    if (res.ok) {
+                        showToast("STOP AWARYJNY AKTYWOWANY! Zlecenia anulowane.", "error");
+                        fetchStatus();
+                    } else {
+                        showToast("Błąd wywoływania stopu awaryjnego.", "error");
+                    }
+                } catch (err) {
+                    showToast("Błąd połączenia z API.", "error");
+                }
+            }
+        }
+
+        // Fetch Trades List
+        async function fetchTrades() {
+            try {
+                const res = await fetch(`${API_BASE}/api/trades`);
+                if (!res.ok) throw new Error("Trades API failed");
+                const trades = await res.json();
+                
+                updateTradesUI(trades);
+                updateEquityChart(trades);
+            } catch (err) {
+                console.error("Error fetching trades:", err);
+            }
+        }
+
+        function updateTradesUI(trades) {
+            const tbody = document.getElementById("trades-table-body");
+            if (!trades || trades.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" class="px-4 py-8 text-center text-on-surface-variant">Brak transakcji w bazie danych</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = trades.map(t => {
+                const exitTime = new Date(t.exit_time);
+                const timeStr = isNaN(exitTime.getTime()) ? "-" : exitTime.toLocaleString('pl-PL', {hour12: false});
+                const isProfit = t.pnl >= 0;
+                
+                // Extract base currency from strategy string (e.g. "mtf_macd:BTC/USDT:USDT")
+                const parts = t.strategy.split(':');
+                const symbol = parts.length > 1 ? parts[1].split('/')[0] : 'BTC';
+                
+                return `
+                    <tr class="border-b border-surface-bright hover:bg-surface-bright/50 transition-colors">
+                        <td class="px-4 py-3 text-on-surface-variant">${timeStr}</td>
+                        <td class="px-4 py-3 ${t.side === 'long' ? 'text-secondary' : 'text-error'} font-bold">${t.side.toUpperCase()}</td>
+                        <td class="px-4 py-3">${t.quantity.toFixed(4)} ${symbol}</td>
+                        <td class="px-4 py-3 text-right">$${t.entry_price.toLocaleString('pl-PL', {maximumFractionDigits:2})}</td>
+                        <td class="px-4 py-3 text-right">$${t.exit_price ? t.exit_price.toLocaleString('pl-PL', {maximumFractionDigits:2}) : "-"}</td>
+                        <td class="px-4 py-3 text-right font-bold ${isProfit ? 'text-secondary' : 'text-error'}">${isProfit ? '+' : ''}$${t.pnl.toFixed(2)}</td>
+                        <td class="px-4 py-3 text-right font-semibold ${isProfit ? 'text-secondary' : 'text-error'}">${isProfit ? '+' : ''}${t.pnl_pct.toFixed(2)}%</td>
+                        <td class="px-4 py-3 text-on-surface-variant text-label-sm">${t.strategy}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // Render simulated Equity curve based on real trades history
+        function updateEquityChart(trades) {
+            const initialCapital = window.initialCapital || 10000;
+            let current = initialCapital;
+            
+            // Reconstruct historical equity points
+            const equities = [current];
+            const chronologicalTrades = trades ? [...trades].reverse() : [];
+            let minEq = current;
+            let maxEq = current;
+            
+            chronologicalTrades.forEach(t => {
+                current += t.pnl;
+                equities.push(current);
+                minEq = Math.min(minEq, current);
+                maxEq = Math.max(maxEq, current);
+            });
+
+            // Ensure we have at least 2 points to draw a line
+            if (equities.length === 1) {
+                equities.push(current);
+            }
+
+            // If flat line or no range, pad bounds
+            if (maxEq === minEq) {
+                minEq -= 100;
+                maxEq += 100;
+            } else {
+                // Add some padding to top and bottom of the chart
+                const diff = maxEq - minEq;
+                minEq -= diff * 0.1;
+                maxEq += diff * 0.1;
+            }
+
+            const range = maxEq - minEq;
+            const step = 100 / (equities.length - 1);
+            
+            // Save to global cache for interactive cursor
+            window.chartData = {
+                equities: equities,
+                trades: chronologicalTrades,
+                minEq: minEq,
+                maxEq: maxEq,
+                range: range,
+                step: step
+            };
+
+            // Build SVG Path
+            let pathD = "";
+            let fillD = "M 0 100 ";
+            
+            equities.forEach((eq, idx) => {
+                const x = idx * step;
+                // Calculate y percentage (invert because SVG 0 is top)
+                const y = 90 - ((eq - minEq) / range) * 80;
+                
+                if (idx === 0) {
+                    pathD += `M ${x.toFixed(1)} ${y.toFixed(1)} `;
+                    fillD += `L ${x.toFixed(1)} ${y.toFixed(1)} `;
+                } else {
+                    pathD += `L ${x.toFixed(1)} ${y.toFixed(1)} `;
+                    fillD += `L ${x.toFixed(1)} ${y.toFixed(1)} `;
+                }
+            });
+            
+            fillD += `L 100 100 Z`;
+
+            document.getElementById("equity-path").setAttribute("d", pathD);
+            document.getElementById("equity-fill-path").setAttribute("d", fillD);
+
+            // Update Y-Axis labels
+            const yLabelsEl = document.getElementById("chart-y-labels");
+            if (yLabelsEl) {
+                const labelVals = [0.9, 0.5, 0.1];
+                yLabelsEl.innerHTML = labelVals.map(val => {
+                    const eqVal = minEq + val * range;
+                    return `<div>$${eqVal.toLocaleString('pl-PL', {maximumFractionDigits:0})}</div>`;
+                }).join('');
+            }
+
+            // Update Break-even Baseline
+            const baselineEl = document.getElementById("equity-baseline");
+            if (baselineEl) {
+                if (minEq <= initialCapital && initialCapital <= maxEq) {
+                    const y = 90 - ((initialCapital - minEq) / range) * 80;
+                    baselineEl.setAttribute("y1", y.toFixed(1));
+                    baselineEl.setAttribute("y2", y.toFixed(1));
+                    baselineEl.setAttribute("opacity", "0.25");
+                } else {
+                    baselineEl.setAttribute("opacity", "0");
+                }
+            }
+
+            // Build Grid Lines
+            const gridLinesEl = document.getElementById("equity-grid-lines");
+            if (gridLinesEl) {
+                gridLinesEl.innerHTML = "";
+                const gridVals = [0.25, 0.5, 0.75];
+                gridVals.forEach(val => {
+                    const y = 90 - val * 80;
+                    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                    line.setAttribute("x1", "0");
+                    line.setAttribute("y1", y.toFixed(1));
+                    line.setAttribute("x2", "100");
+                    line.setAttribute("y2", y.toFixed(1));
+                    line.setAttribute("stroke", "currentColor");
+                    line.setAttribute("class", "text-outline-variant");
+                    line.setAttribute("stroke-width", "0.5");
+                    line.setAttribute("stroke-dasharray", "3,3");
+                    line.setAttribute("opacity", "0.15");
+                    line.setAttribute("vector-effect", "non-scaling-stroke");
+                    gridLinesEl.appendChild(line);
+                });
+            }
+        }
+
+        // Setup interactive chart listeners
+        function initChartInteraction() {
+            const svg = document.getElementById("equity-svg");
+            const container = document.getElementById("chart-container");
+            const cursorLine = document.getElementById("chart-cursor-line");
+            const cursorDot = document.getElementById("chart-cursor-dot");
+            const tooltip = document.getElementById("chart-tooltip");
+            
+            if (!svg || !container || !cursorLine || !cursorDot || !tooltip) return;
+
+            function onMouseMove(e) {
+                const data = window.chartData;
+                if (!data || !data.equities || data.equities.length < 2) return;
+
+                const rect = svg.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const pctX = (mouseX / rect.width) * 100;
+
+                const numPoints = data.equities.length;
+                let idx = Math.round((pctX / 100) * (numPoints - 1));
+                idx = Math.max(0, Math.min(idx, numPoints - 1));
+
+                const targetX = idx * data.step;
+                const eqValue = data.equities[idx];
+                const targetY = 90 - ((eqValue - data.minEq) / data.range) * 80;
+
+                // Position SVG cursor line
+                cursorLine.setAttribute("x1", targetX);
+                cursorLine.setAttribute("x2", targetX);
+                cursorLine.setAttribute("opacity", "0.5");
+
+                // Position HTML cursor dot (convert percentage of SVG back to pixels inside inner container)
+                const dotLeft = (targetX / 100) * rect.width;
+                const dotTop = (targetY / 100) * rect.height;
+                cursorDot.style.left = `${dotLeft}px`;
+                cursorDot.style.top = `${dotTop}px`;
+                cursorDot.classList.remove("hidden");
+
+                // Tooltip content
+                let tooltipContent = "";
+                const initialCapital = window.initialCapital || 10000;
+                if (idx === 0) {
+                    tooltipContent = `
+                        <div class="font-bold text-on-surface-variant">Kapitał Początkowy</div>
+                        <div class="text-[13px] font-bold text-primary mt-1">$${eqValue.toLocaleString('pl-PL', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+                    `;
+                } else {
+                    const trade = data.trades[idx - 1];
+                    const change = eqValue - initialCapital;
+                    const changePct = (change / initialCapital) * 100;
+                    const isProfit = trade.pnl >= 0;
+                    
+                    const tradeTime = new Date(trade.exit_time);
+                    const timeStr = isNaN(tradeTime.getTime()) ? "-" : tradeTime.toLocaleString('pl-PL', {hour12: false});
+                    
+                    // Extract base currency from strategy string
+                    const parts = trade.strategy.split(':');
+                    const sym = parts.length > 1 ? parts[1].split('/')[0] : 'BTC';
+
+                    tooltipContent = `
+                        <div class="border-b border-outline-variant/30 pb-1 mb-1 font-bold text-on-surface-variant">${timeStr}</div>
+                        <div class="space-y-0.5">
+                            <div>Kapitał: <span class="font-bold text-on-surface">$${eqValue.toLocaleString('pl-PL', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></div>
+                            <div>Wynik: <span class="font-bold ${isProfit ? 'text-secondary' : 'text-error'}">${isProfit ? '+' : ''}$${trade.pnl.toLocaleString('pl-PL', {minimumFractionDigits: 2, maximumFractionDigits: 2})} (${isProfit ? '+' : ''}${trade.pnl_pct.toFixed(2)}%)</span></div>
+                            <div class="text-[10px] text-on-surface-variant pt-0.5 border-t border-outline-variant/10 mt-1">Skumulowany: <span class="font-bold ${change >= 0 ? 'text-secondary' : 'text-error'}">${change >= 0 ? '+' : ''}${changePct.toFixed(2)}%</span></div>
+                        </div>
+                    `;
+                }
+
+                tooltip.innerHTML = tooltipContent;
+                tooltip.style.display = "block";
+
+                // Position Tooltip relative to container
+                const containerRect = container.getBoundingClientRect();
+                const tooltipWidth = 180;
+                const tooltipHeight = 90;
+                
+                let tooltipLeft = e.clientX - containerRect.left + 15;
+                if (tooltipLeft + tooltipWidth > containerRect.width) {
+                    tooltipLeft = e.clientX - containerRect.left - tooltipWidth - 15;
+                }
+                
+                let tooltipTop = e.clientY - containerRect.top - 20;
+                tooltipTop = Math.max(5, Math.min(tooltipTop, containerRect.height - tooltipHeight - 5));
+
+                tooltip.style.left = `${tooltipLeft}px`;
+                tooltip.style.top = `${tooltipTop}px`;
+            }
+
+            function onMouseLeave() {
+                cursorLine.setAttribute("opacity", "0");
+                cursorDot.classList.add("hidden");
+                tooltip.style.display = "none";
+            }
+
+            svg.addEventListener("mousemove", onMouseMove);
+            svg.addEventListener("mouseleave", onMouseLeave);
+        }
+
+        // Fetch System Logs
+        async function fetchLogs() {
+            try {
+                const res = await fetch(`${API_BASE}/api/logs`);
+                if (!res.ok) throw new Error("Logs API failed");
+                const logs = await res.json();
+                
+                fullLogsCache = logs;
+                renderLogs();
+            } catch (err) {
+                console.error("Error fetching logs:", err);
+            }
+        }
+
+        // Render Logs inside logs view and overview console
+        function renderLogs() {
+            const term = document.getElementById("terminal-content");
+            const miniTerm = document.getElementById("mini-log-container");
+            const autoScroll = document.getElementById("autoscroll-checkbox").checked;
+            
+            // Filter logs by level and text search
+            const filtered = fullLogsCache.filter(log => {
+                const levelMatch = logsFilterLevel === "ALL" || log.level === logsFilterLevel;
+                const textMatch = !logsSearchQuery || log.message.toLowerCase().includes(logsSearchQuery.toLowerCase());
+                return levelMatch && textMatch;
+            });
+
+            // 1. Render inside Logs Tab
+            if (filtered.length === 0) {
+                term.innerHTML = `<div class="text-on-surface-variant text-center py-4">Brak logów pasujących do filtrów</div>`;
+            } else {
+                term.innerHTML = filtered.map(log => {
+                    let levelColor = "text-[#38bdf8]"; // Info (blue)
+                    let borderClass = "";
+                    
+                    if (log.level === "WARN" || log.level === "WARNING") {
+                        levelColor = "text-primary-fixed-dim"; // Orange/Yellow
+                    } else if (log.level === "ERROR") {
+                        levelColor = "text-error"; // Red
+                        borderClass = "border-l-2 border-error pl-1.5 ml-[2px]";
+                    } else if (log.level === "CRITICAL" || log.level === "CRIT") {
+                        levelColor = "text-[#ef4444] font-bold"; // Deep red
+                        borderClass = "bg-error/10 border-l-2 border-[#ef4444] pl-1.5 ml-[2px]";
+                    }
+                    
+                    return `
+                        <div class="flex items-start hover:bg-[#1E293B] px-2 py-0.5 -mx-2 rounded-sm transition-colors group ${borderClass}">
+                            <span class="text-on-surface-variant w-[120px] shrink-0 select-none">[${log.timestamp || '-'}]</span>
+                            <span class="${levelColor} w-[70px] shrink-0 font-bold select-none">[${log.level}]</span>
+                            <span class="text-on-background flex-1 break-words">${escapeHTML(log.message)}</span>
+                        </div>
+                    `;
+                }).join('') + `<div class="flex items-start px-2 py-0.5 -mx-2 mt-2"><span class="w-2 h-4 bg-outline-variant animate-pulse inline-block align-middle"></span></div>`;
+            }
+
+            // 2. Render inside Mini overview console (last 10 entries of INFO or higher)
+            const miniFiltered = fullLogsCache.filter(log => log.level !== "DEBUG").slice(-10);
+            miniTerm.innerHTML = miniFiltered.map(log => {
+                let textClass = "";
+
+                if (log.level === "WARNING" || log.level === "WARN") textClass = "text-primary";
+                else if (log.level === "ERROR" || log.level === "CRITICAL") textClass = "text-error";
+                
+                return `
+                    <div class="flex gap-4">
+                        <span class="text-on-surface-variant/50 w-20 shrink-0">${log.timestamp || ''}</span>
+                        <span class="${textClass}">${escapeHTML(log.message)}</span>
+                    </div>
+                `;
+            }).join('') + `<div class="mt-2 text-on-surface animate-pulse">_</div>`;
+
+            // Auto-scroll logic for Logs Tab
+            if (autoScroll) {
+                term.scrollTop = term.scrollHeight;
+            }
+        }
+
+        function filterLogs(level) {
+            logsFilterLevel = level;
+            
+            // Update filter badges UI
+            const levels = ["ALL", "INFO", "WARNING", "ERROR", "CRITICAL"];
+            const mapping = { ALL: "all", INFO: "info", WARNING: "warn", ERROR: "error", CRITICAL: "crit" };
+            
+            levels.forEach(lvl => {
+                const btn = document.getElementById(`filter-${mapping[lvl]}`);
+                if (lvl === level) {
+                    btn.className = "px-3 py-1 bg-primary text-on-primary font-label-sm text-label-sm rounded border border-primary transition-colors shrink-0";
+                } else {
+                    btn.className = "px-3 py-1 bg-transparent text-on-surface-variant hover:bg-surface-container font-label-sm text-label-sm rounded border border-transparent hover:border-outline-variant transition-colors shrink-0";
+                }
+            });
+
+            renderLogs();
+        }
+
+        function applyLogSearch() {
+            logsSearchQuery = document.getElementById("log-search-input").value;
+            renderLogs();
+        }
+
+        function clearConsole() {
+            fullLogsCache = [];
+            renderLogs();
+        }
+
+        // HTML escaping helper
+        function escapeHTML(str) {
+            return str
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        // Fetch Analytics
+        async function fetchAnalytics() {
+            try {
+                const res = await fetch(`${API_BASE}/api/analytics`);
+                if (!res.ok) throw new Error("Analytics API failed");
+                const data = await res.json();
+                
+                updateAnalyticsUI(data);
+            } catch (err) {
+                console.error("Error fetching analytics:", err);
+            }
+        }
+
+        function updateAnalyticsUI(data) {
+            if (data.error) {
+                console.error("Analytics error from server:", data.error);
+                return;
+            }
+
+            // KPIs
+            const sharpeVal = typeof data.sharpe_ratio === 'number' ? data.sharpe_ratio.toFixed(4) : (data.sharpe_ratio || "-");
+            const sharpeEl = document.getElementById("stats-sharpe");
+            sharpeEl.textContent = sharpeVal;
+            if (typeof data.sharpe_ratio === 'number') {
+                if (data.sharpe_ratio >= 1.5) {
+                    sharpeEl.className = "text-[28px] leading-tight font-headline-lg font-bold text-secondary";
+                } else if (data.sharpe_ratio > 0) {
+                    sharpeEl.className = "text-[28px] leading-tight font-headline-lg font-bold text-primary";
+                } else {
+                    sharpeEl.className = "text-[28px] leading-tight font-headline-lg font-bold text-error";
+                }
+            }
+
+            const pfVal = typeof data.profit_factor === 'number' ? data.profit_factor.toFixed(2) : (data.profit_factor || "-");
+            const pfEl = document.getElementById("stats-profit-factor");
+            pfEl.textContent = pfVal;
+            if (typeof data.profit_factor === 'number') {
+                pfEl.className = data.profit_factor >= 1.5 
+                    ? "text-[28px] leading-tight font-headline-lg font-bold text-secondary" 
+                    : "text-[28px] leading-tight font-headline-lg font-bold text-error";
+            }
+
+            const rfVal = typeof data.recovery_factor === 'number' ? data.recovery_factor.toFixed(2) : (data.recovery_factor || "-");
+            const rfEl = document.getElementById("stats-recovery-factor");
+            rfEl.textContent = rfVal;
+            if (typeof data.recovery_factor === 'number') {
+                rfEl.className = data.recovery_factor >= 2.0 
+                    ? "text-[28px] leading-tight font-headline-lg font-bold text-secondary" 
+                    : "text-[28px] leading-tight font-headline-lg font-bold text-on-surface";
+            }
+
+            const wlRatioVal = typeof data.win_loss_count_ratio === 'number' ? data.win_loss_count_ratio.toFixed(2) : (data.win_loss_count_ratio || "-");
+            document.getElementById("stats-win-loss-ratio").textContent = wlRatioVal;
+            document.getElementById("stats-win-count").textContent = data.win_count;
+            document.getElementById("stats-loss-count").textContent = data.loss_count;
+
+            // Details
+            document.getElementById("stats-avg-duration").textContent = data.formatted_duration || "-";
+            document.getElementById("stats-total-trades").textContent = data.total_trades;
+            document.getElementById("stats-win-rate").textContent = typeof data.win_rate === 'number' ? `${data.win_rate.toFixed(1)}%` : (data.win_rate || "-");
+            
+            const totalPnL = data.total_pnl || 0.0;
+            const returnPct = data.total_return_pct || 0.0;
+            const returnEl = document.getElementById("stats-total-return");
+            if (totalPnL >= 0) {
+                returnEl.textContent = `+$${totalPnL.toLocaleString('pl-PL', {minimumFractionDigits: 2, maximumFractionDigits: 2})} (+${returnPct.toFixed(2)}%)`;
+                returnEl.className = "font-data-mono text-secondary font-bold text-lg";
+            } else {
+                returnEl.textContent = `-$${Math.abs(totalPnL).toLocaleString('pl-PL', {minimumFractionDigits: 2, maximumFractionDigits: 2})} (${returnPct.toFixed(2)}%)`;
+                returnEl.className = "font-data-mono text-error font-bold text-lg";
+            }
+
+            // Averages
+            const avgWin = data.avg_win || 0.0;
+            const avgLoss = data.avg_loss || 0.0;
+            document.getElementById("stats-avg-win").textContent = `+$${avgWin.toLocaleString('pl-PL', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+            document.getElementById("stats-avg-loss").textContent = `-$${avgLoss.toLocaleString('pl-PL', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+            
+            const wlRatio = data.win_loss_ratio || 0.0;
+            const wlRatioEl = document.getElementById("stats-avg-win-loss-ratio");
+            wlRatioEl.textContent = typeof wlRatio === 'number' ? wlRatio.toFixed(2) : wlRatio;
+            if (typeof wlRatio === 'number') {
+                wlRatioEl.className = wlRatio >= 1.0 ? "font-data-mono text-secondary font-bold" : "font-data-mono text-error font-bold";
+            }
+
+            const maxDd = data.max_drawdown_pct || 0.0;
+            document.getElementById("stats-max-drawdown").textContent = `${maxDd.toFixed(1)}%`;
+
+            // Max Win Trade Card
+            const maxWin = data.max_win_trade;
+            const winCardContent = document.getElementById("stats-max-win-content");
+            const winCardTime = document.getElementById("stats-max-win-time");
+            
+            if (maxWin) {
+                const exitTime = new Date(maxWin.exit_time);
+                winCardTime.textContent = isNaN(exitTime.getTime()) ? "-" : exitTime.toLocaleString('pl-PL', {hour12: false});
+                
+                const parts = maxWin.strategy.split(':');
+                const sym = parts.length > 1 ? parts[1].split('/')[0] : 'BTC';
+                
+                winCardContent.innerHTML = `
+                    <div>
+                        <div class="text-[11px] text-on-surface-variant uppercase font-medium">Aktywo / Kierunek</div>
+                        <div class="font-data-mono font-bold text-on-surface mt-1">${sym} <span class="${maxWin.side === 'long' ? 'text-secondary' : 'text-error'} font-bold">${maxWin.side.toUpperCase()}</span></div>
+                    </div>
+                    <div>
+                        <div class="text-[11px] text-on-surface-variant uppercase font-medium">Wielkość transakcji</div>
+                        <div class="font-data-mono font-bold text-on-surface mt-1">${maxWin.quantity.toFixed(4)} ${sym}</div>
+                    </div>
+                    <div>
+                        <div class="text-[11px] text-on-surface-variant uppercase font-medium">Wynik transakcji</div>
+                        <div class="font-data-mono font-bold text-secondary mt-1">+$${maxWin.pnl.toFixed(2)} (+${maxWin.pnl_pct.toFixed(2)}%)</div>
+                    </div>
+                    <div class="col-span-3 border-t border-surface-bright/50 pt-2 mt-1 grid grid-cols-2">
+                        <div>
+                            <div class="text-[11px] text-on-surface-variant">Wejście → Wyjście</div>
+                            <div class="font-data-mono text-xs text-on-surface font-medium">$${maxWin.entry_price.toLocaleString('pl-PL', {maximumFractionDigits:2})} → $${maxWin.exit_price.toLocaleString('pl-PL', {maximumFractionDigits:2})}</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-[11px] text-on-surface-variant">Powód zamknięcia</div>
+                            <div class="font-data-mono text-xs text-on-surface-variant uppercase font-bold">${maxWin.exit_reason || "-"}</div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                winCardTime.textContent = "-";
+                winCardContent.innerHTML = `<div class="col-span-3 text-center text-on-surface-variant py-4">Brak danych transakcyjnych</div>`;
+            }
+
+            // Max Loss Trade Card
+            const maxLoss = data.max_loss_trade;
+            const lossCardContent = document.getElementById("stats-max-loss-content");
+            const lossCardTime = document.getElementById("stats-max-loss-time");
+            
+            if (maxLoss) {
+                const exitTime = new Date(maxLoss.exit_time);
+                lossCardTime.textContent = isNaN(exitTime.getTime()) ? "-" : exitTime.toLocaleString('pl-PL', {hour12: false});
+                
+                const parts = maxLoss.strategy.split(':');
+                const sym = parts.length > 1 ? parts[1].split('/')[0] : 'BTC';
+                
+                lossCardContent.innerHTML = `
+                    <div>
+                        <div class="text-[11px] text-on-surface-variant uppercase font-medium">Aktywo / Kierunek</div>
+                        <div class="font-data-mono font-bold text-on-surface mt-1">${sym} <span class="${maxLoss.side === 'long' ? 'text-secondary' : 'text-error'} font-bold">${maxLoss.side.toUpperCase()}</span></div>
+                    </div>
+                    <div>
+                        <div class="text-[11px] text-on-surface-variant uppercase font-medium">Wielkość transakcji</div>
+                        <div class="font-data-mono font-bold text-on-surface mt-1">${maxLoss.quantity.toFixed(4)} ${sym}</div>
+                    </div>
+                    <div>
+                        <div class="text-[11px] text-on-surface-variant uppercase font-medium">Wynik transakcji</div>
+                        <div class="font-data-mono font-bold text-error mt-1">-$${Math.abs(maxLoss.pnl).toFixed(2)} (${maxLoss.pnl_pct.toFixed(2)}%)</div>
+                    </div>
+                    <div class="col-span-3 border-t border-surface-bright/50 pt-2 mt-1 grid grid-cols-2">
+                        <div>
+                            <div class="text-[11px] text-on-surface-variant">Wejście → Wyjście</div>
+                            <div class="font-data-mono text-xs text-on-surface font-medium">$${maxLoss.entry_price.toLocaleString('pl-PL', {maximumFractionDigits:2})} → $${maxLoss.exit_price.toLocaleString('pl-PL', {maximumFractionDigits:2})}</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-[11px] text-on-surface-variant">Powód zamknięcia</div>
+                            <div class="font-data-mono text-xs text-on-surface-variant uppercase font-bold">${maxLoss.exit_reason || "-"}</div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                lossCardTime.textContent = "-";
+                lossCardContent.innerHTML = `<div class="col-span-3 text-center text-on-surface-variant py-4">Brak danych transakcyjnych</div>`;
+            }
+
+            // Slippage table
+            const slippageTbody = document.getElementById("stats-slippage-tbody");
+            if (slippageTbody && data.slippage_summary) {
+                const summary = data.slippage_summary;
+                const bySymbol = summary.by_symbol || [];
+                
+                if (bySymbol.length === 0) {
+                    slippageTbody.innerHTML = `
+                        <tr>
+                            <td colspan="5" class="py-4 text-center text-on-surface-variant">Brak danych poślizgu dla instrumentów</td>
+                        </tr>
+                    `;
+                } else {
+                    let html = "";
+                    bySymbol.forEach(item => {
+                        const count = item.tracked_count;
+                        const entryVal = typeof item.entry_slip_bps === 'number' ? `${item.entry_slip_bps > 0 ? '+' : ''}${item.entry_slip_bps.toFixed(2)}` : (item.entry_slip_bps || "-");
+                        const exitVal = typeof item.exit_slip_bps === 'number' ? `${item.exit_slip_bps > 0 ? '+' : ''}${item.exit_slip_bps.toFixed(2)}` : (item.exit_slip_bps || "-");
+                        const totalVal = typeof item.total_slip_bps === 'number' ? `${item.total_slip_bps > 0 ? '+' : ''}${item.total_slip_bps.toFixed(2)}` : (item.total_slip_bps || "-");
+                        
+                        const getSlippageClass = (val) => {
+                            if (typeof val === 'number') {
+                                if (val > 0.05) return "text-error font-bold";
+                                if (val < -0.05) return "text-secondary font-bold";
+                                return "text-on-surface font-medium";
+                            }
+                            return "text-on-surface-variant";
+                        };
+                        
+                        html += `
+                            <tr class="hover:bg-surface-bright/20 transition-colors">
+                                <td class="py-3 font-semibold text-on-surface">${item.symbol}</td>
+                                <td class="py-3 text-right font-data-mono ${getSlippageClass(item.entry_slip_bps)}">${entryVal} <span class="text-[10px] text-on-surface-variant font-normal">bps</span></td>
+                                <td class="py-3 text-right font-data-mono ${getSlippageClass(item.exit_slip_bps)}">${exitVal} <span class="text-[10px] text-on-surface-variant font-normal">bps</span></td>
+                                <td class="py-3 text-right font-data-mono ${getSlippageClass(item.total_slip_bps)}">${totalVal} <span class="text-[10px] text-on-surface-variant font-normal">bps</span></td>
+                                <td class="py-3 text-center font-data-mono text-on-surface-variant">${count}</td>
+                            </tr>
+                        `;
+                    });
+                    
+                    if (summary.global_tracked_count > 0) {
+                        const globalEntryVal = typeof summary.global_avg_entry_slip === 'number' ? `${summary.global_avg_entry_slip > 0 ? '+' : ''}${summary.global_avg_entry_slip.toFixed(2)}` : (summary.global_avg_entry_slip || "-");
+                        const globalExitVal = typeof summary.global_avg_exit_slip === 'number' ? `${summary.global_avg_exit_slip > 0 ? '+' : ''}${summary.global_avg_exit_slip.toFixed(2)}` : (summary.global_avg_exit_slip || "-");
+                        const globalTotalVal = typeof summary.global_avg_total_slip === 'number' ? `${summary.global_avg_total_slip > 0 ? '+' : ''}${summary.global_avg_total_slip.toFixed(2)}` : (summary.global_avg_total_slip || "-");
+                        
+                        const getSlippageClass = (val) => {
+                            if (typeof val === 'number') {
+                                if (val > 0.05) return "text-error font-bold";
+                                if (val < -0.05) return "text-secondary font-bold";
+                                return "text-on-surface font-medium";
+                            }
+                            return "text-on-surface-variant";
+                        };
+                        
+                        html += `
+                            <tr class="bg-surface-bright/30 font-bold border-t border-surface-bright">
+                                <td class="py-3 text-on-surface">SUMARYCZNIE (GLOBAL)</td>
+                                <td class="py-3 text-right font-data-mono ${getSlippageClass(summary.global_avg_entry_slip)}">${globalEntryVal} <span class="text-[10px] text-on-surface-variant font-normal">bps</span></td>
+                                <td class="py-3 text-right font-data-mono ${getSlippageClass(summary.global_avg_exit_slip)}">${globalExitVal} <span class="text-[10px] text-on-surface-variant font-normal">bps</span></td>
+                                <td class="py-3 text-right font-data-mono ${getSlippageClass(summary.global_avg_total_slip)}">${globalTotalVal} <span class="text-[10px] text-on-surface-variant font-normal">bps</span></td>
+                                <td class="py-3 text-center font-data-mono text-on-surface-variant">${summary.global_tracked_count}</td>
+                            </tr>
+                        `;
+                    }
+                    
+                    slippageTbody.innerHTML = html;
+                }
+            }
+        }
+
+        // Export Data
+        function exportData(format) {
+            const url = `${API_BASE}/api/export/${format}`;
+            showToast(`Rozpoczęto pobieranie pliku trade_history.${format}...`, "info");
+            window.location.href = url;
+        }
+
+        // Initialize polling intervals
+        fetchStatus();
+        fetchTrades();
+        fetchLogs();
+        fetchAnalytics();
+        initChartInteraction();
+
+        setInterval(fetchStatus, 2000);
+        setInterval(fetchLogs, 2000);
+        setInterval(fetchTrades, 5000);
+        setInterval(fetchAnalytics, 15000);
+
+    </script>
+</body>
+</html>

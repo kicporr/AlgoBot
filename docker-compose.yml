@@ -1,0 +1,23 @@
+# ============================================================
+# bocik — Docker Compose (Linux server deployment)
+# ============================================================
+
+version: "3.8"
+
+services:
+  bot:
+    build: .
+    container_name: bocik
+    restart: unless-stopped
+    env_file:
+      - ./config/.env
+    environment:
+      - TZ=Europe/Warsaw
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config:ro
+    ports:
+      - "8080:8080"   # Dashboard
+    # Default: paper trading. Uncomment for live:
+    # command: python orchestrator.py --mode live

@@ -1,0 +1,60 @@
+# ============================================================
+# .gitignore — bocik BTC Trading Bot
+# ============================================================
+
+# Environment
+.env
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Data
+data/*.db
+data/*.sqlite
+data/cache/
+
+# Models (large files)
+models/*.json
+models/*.pkl
+models/*.joblib
+!models/.gitkeep
+
+# Logs
+logs/*.log
+!logs/.gitkeep
+
+# Docker
+docker/grafana/provisioning/datasources/*.yaml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/

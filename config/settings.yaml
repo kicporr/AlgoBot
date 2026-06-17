@@ -1,0 +1,345 @@
+# ============================================================
+# BTC Trading Bot — Main Configuration
+# ============================================================
+
+# --- Bot Identity ---
+bot:
+  name: "bocik"
+  version: "0.1.0"
+  mode: "paper"             # "paper" | "live" | "backtest"
+  log_level: "INFO"         # DEBUG | INFO | WARNING | ERROR
+
+# --- Exchange ---
+exchange:
+  name: "bitget"
+  type: "swap"                  # "spot" | "swap"
+  ws_inst_type: "USDT-FUTURES"  # "SPOT" | "USDT-FUTURES"
+  symbols:
+    - "BTC/USDT:USDT"
+    - "ETH/USDT:USDT"
+    - "XRP/USDT:USDT"
+    - "SOL/USDT:USDT"
+    - "LTC/USDT:USDT"
+  timeframes:
+    primary: "1h"
+    secondary: "4h"
+    higher_tf: "1d"
+  
+  # API credentials (3-field auth — set via environment variables, never commit!)
+  # BITGET_API_KEY
+  # BITGET_SECRET_KEY
+  # BITGET_PASSPHRASE
+
+  # Rate limits (Bitget: 6000 req/min/IP, 20 req/s spot)
+  rate_limit:
+    max_requests_per_second: 10
+    max_orders_per_second: 2
+
+  # Fees (for backtest simulation)
+  # Bitget spot: 0.1% maker/taker base; 0.08% with BGB discount
+  fees:
+    maker: 0.0002           # 0.02%
+    taker: 0.0006           # 0.06%
+    slippage: 0.0002        # 0.02% base (dynamic: +ATR-based for vol)
+    slippage_atr_mult: 0.05 # ATR-to-slippage scaling
+    taker_slippage_mult: 1.5 # Taker exits multiplier
+
+# --- Data ---
+data:
+  database:
+    type: "sqlite"          # sqlite | postgresql
+    path: "./data/trading.db"
+    # For postgresql:
+    # host: "localhost"
+    # port: 5432
+    # name: "tradingbot"
+    # user: "bot"
+    # password: ${POSTGRES_PASSWORD}
+  
+  # How many candles to keep in memory
+  cache:
+    max_candles_1m: 1440    # 24 hours
+    max_candles_1h: 500     # ~20 days
+    max_candles_4h: 500     # ~83 days
+    max_candles_1d: 500     # ~500 days
+
+  # Data validation
+  validation:
+    max_price_jump_pct: 30   # Reject candles with >30% single-bar change
+    timestamp_tolerance_s: 5 # Allow ±5s timestamp drift
+
+# --- Features ---
+features:
+  # Which feature groups to compute
+  enabled_groups:
+    - "price"
+    - "momentum"
+    - "trend"
+    - "volatility"
+    - "volume"
+    - "derived"
+    - "multi_timeframe"
+  
+  # RSI parameters
+  rsi:
+    periods: [14, 28]
+  
+  # MACD parameters
+  macd:
+    fast: 12
+    slow: 26
+    signal: 9
+  
+  # Moving averages
+  moving_averages:
+    sma: [20, 50, 200]
+    ema: [12, 26, 50]
+  
+  # Bollinger Bands
+  bollinger:
+    period: 20
+    std_dev: 2
+  
+  # ATR
+  atr:
+    period: 14
+  
+  # ADX
+  adx:
+    period: 14
+    threshold: 25
+  
+  # Multi-timeframe features
+  multi_tf:
+    timeframes: ["4h", "1d"]
+    indicators: ["rsi", "macd_histogram", "sma_distance", "atr"]
+
+# --- Strategies ---
+strategies:
+
+  
+  # Multi-Timeframe MACD + Elder Filter
+  mtf_macd_elder:
+    enabled: true
+    macd:
+      fast: 10
+      slow: 20
+      signal: 9
+    elder_filter:
+      enabled: true
+      higher_tf: "1d"
+      require_volume_confirm: false  # Do not require volume spike to enter (matches optimized setup)
+      allow_shorts: true
+    exit:
+      method: "trailing_candle"   # Exit on first red candle
+      # Alternative: "trailing_stop", "fixed_hold"
+      # Commented out to enable dynamic volatility-adjusted stops (Sharpe 2.71+ setup):
+      # trailing_stop_pct: 0.02
+      # atr_stop_mult: 1.5
+      min_hold_bars: 1          # Let engine control minimum hold via min_signal_exit_bars=6
+  
+  # Mean Reversion (for ranging markets)
+  mean_reversion:
+    enabled: true
+    rsi:
+      period: 14
+      oversold: 35          # Aligned with optimized solo BTC backtest values
+      overbought: 65
+    bollinger:
+      period: 20
+      std_dev: 2
+    require_both_signals: true    # Need both RSI + BB confirm
+    allow_shorts: false           # MR strategy never shorts
+
+# --- Regime Classifier ---
+regime:
+  enabled: true
+  lookback_bars: 100
+  trending:
+    adx_min: 25
+    di_ratio_strong: 1.3
+    di_ratio_reverse: 0.77
+  ranging:
+    adx_max: 20
+    bb_width_max: 0.04
+    vol_max: 0.50
+  volatile:
+    atr_mult: 2.0
+    vol_absolute: 1.0
+    bb_width_min: 0.08
+  hysteresis_bars: 2
+  default_regime: "unclear"       # When unsure, stay flat
+
+# --- Meta-Labeling ---
+meta_labeling:
+  enabled: true
+  model: "xgboost"                # xgboost | lightgbm
+  training_samples: 1000          # Use last N signals for training
+  min_confidence: 0.55            # Only execute if confidence > 0.55
+
+# --- Risk Management ---
+risk:
+  max_position_pct: 0.20          # 20% per trade (aligned with multi-asset backtest)
+  max_concurrent_positions: 3     # Max 3 simultaneous positions
+  position_sizing:
+    method: "fixed_fraction"      # half_kelly | fixed_fraction | equal
+    max_risk_per_trade_pct: 2.0   # Max 2% of capital at risk per trade
+    max_position_size_btc: 0.5    # Hard cap on BTC per trade
+    max_total_exposure_pct: 60    # Max 60% of capital (3 positions × 20%)
+  
+  circuit_breaker:
+    max_drawdown_pct: 20          # Stop bot if DD from peak > 20%
+    daily_loss_limit_pct: 5       # Stop for the day
+    weekly_loss_limit_pct: 10
+    consecutive_loss_halt: 5      # 5 losses in a row → halt
+    consecutive_loss_warn: 3      # 3 losses → skip next signal
+    volatility_circuit_mult: 5.0  # Halt if vol > 5× average
+  
+  per_trade:
+    stop_loss_pct: 3.0            # Hard stop: -3%
+    take_profit_pct: 8.0          # TP at +8%
+    trailing_stop_activation: 3.0 # Activate trailing at +3%
+    trailing_stop_distance: 1.5   # Trail 1.5% behind price
+    volatility_stop_mult: 2.0     # Stop at 2× ATR from entry
+    max_duration_hours: 48        # Close any trade open >48h
+    cooldown_minutes: 60          # Wait after loss before next trade
+
+# --- Execution ---
+execution:
+  order_type: "limit"             # limit | market (limit = maker fees)
+  order_timeout_seconds: 30       # Cancel & re-price if unfilled after 30s
+  max_retries: 3
+  retry_delay_seconds: 2
+
+# --- Monitoring ---
+monitoring:
+  telegram:
+    enabled: true
+    # TELEGRAM_BOT_TOKEN (env var)
+    # TELEGRAM_CHAT_ID (env var)
+    alerts:
+      - "trade_open"
+      - "trade_close"
+      - "stop_loss_hit"
+      - "circuit_breaker"
+      - "daily_summary"
+      - "error"
+    reports:
+      enabled: true
+      time: "22:00"                # HH:MM local time
+      interval: "both"            # daily | weekly | both
+      weekly_day: "Sunday"        # day of week for weekly report (if interval is weekly or both)
+  
+  # Performance snapshots every N candles
+  snapshot_interval_minutes: 60
+  
+  grafana:
+    enabled: false
+    port: 3000
+
+# --- Paths ---
+paths:
+  data_dir: "./data"
+  models_dir: "./models"
+  logs_dir: "./logs"
+  config_dir: "./config"
+
+# --- Dashboard ---
+dashboard:
+  enabled: true
+  host: "127.0.0.1"
+  port: 8080
+
+# --- Backtest ---
+backtest:
+  min_signal_exit_bars: 6
+
+
+# --- Per-Symbol Configuration Overrides ---
+symbols:
+  "BTC/USDT:USDT":
+    enabled: true
+    risk:
+      max_position_pct: 0.20          # 20% per trade (aligned with backtest)
+      position_sizing:
+        max_position_size_btc: 0.5    # Hard cap on BTC size
+    strategies:
+      mtf_macd_elder:
+        macd:
+          fast: 10
+          slow: 20
+          signal: 9
+        exit:
+          trailing_stop_pct: 0.02
+          atr_stop_mult: 3.0
+          min_hold_bars: 6          # Aligned with backtest min_signal_exit_bars=6
+  "ETH/USDT:USDT":
+    enabled: true
+    risk:
+      max_position_pct: 0.20          # 20% per trade (aligned with backtest)
+      position_sizing:
+        max_position_size_btc: 10.0   # Hard cap on ETH size (10 ETH)
+    strategies:
+      mtf_macd_elder:
+        macd:
+          fast: 5
+          slow: 13
+          signal: 8
+        exit:
+          trailing_stop_pct: 0.02
+          atr_stop_mult: 2.5
+          min_hold_bars: 6
+  "XRP/USDT:USDT":
+    enabled: true
+    risk:
+      max_position_pct: 0.20          # 20% per trade (aligned with backtest)
+      position_sizing:
+        max_position_size_btc: 20000.0 # Hard cap on XRP size (20,000 XRP)
+    strategies:
+      mtf_macd_elder:
+        macd:
+          fast: 5
+          slow: 13
+          signal: 8
+        exit:
+          trailing_stop_pct: 0.02
+          atr_stop_mult: 2.0
+          min_hold_bars: 6
+  "SOL/USDT:USDT":
+    enabled: true
+    risk:
+      max_position_pct: 0.20          # 20% per trade (aligned with backtest)
+      position_sizing:
+        max_position_size_btc: 150.0   # Twardy cap rozmiaru pozycji (150 SOL)
+    strategies:
+      mtf_macd_elder:
+        macd:
+          fast: 10
+          slow: 20
+          signal: 9
+        elder_filter:
+          allow_shorts: false       # Wyłączenie shortów dla zachowania stabilności
+        exit:
+          trailing_stop_pct: 0.03
+          atr_stop_mult: 3.0
+          min_hold_bars: 6          # 6 godzin minimalnego trzymania
+  "LTC/USDT:USDT":
+    enabled: true
+    risk:
+      max_position_pct: 0.20          # 20% per trade (aligned with backtest)
+      position_sizing:
+        max_position_size_btc: 250.0   # Twardy cap rozmiaru pozycji (250 LTC)
+    strategies:
+      mtf_macd_elder:
+        macd:
+          fast: 5
+          slow: 13
+          signal: 8
+        elder_filter:
+          allow_shorts: true        # Zoptymalizowano dla pozycji długich i krótkich
+        exit:
+          trailing_stop_pct: 0.02
+          atr_stop_mult: 2.5
+          min_hold_bars: 6          # 6 godzin minimalnego trzymania
+
+
