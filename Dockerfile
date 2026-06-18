@@ -35,3 +35,8 @@ COPY . .
 
 # Default: paper trading (safe)
 CMD ["python", "orchestrator.py", "--mode", "paper"]
+
+# Health check: dashboard /api/status must respond within 10s
+# Bot restart if 3 consecutive checks fail
+HEALTHCHECK --interval=60s --timeout=10s --retries=3 --start-period=120s \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8088/api/status', timeout=5)" || exit 1

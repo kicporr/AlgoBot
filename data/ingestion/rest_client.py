@@ -90,10 +90,18 @@ class BitgetRESTClient:
                 symbol, timeframe, since=since_ms, limit=limit
             )
         except ccxt.NetworkError as e:
-            logger.error(f"Network error: {e}")
+            logger.error(f"Network error (will retry): {e}")
             raise
         except ccxt.ExchangeError as e:
-            logger.error(f"Exchange error: {e}")
+            msg = str(e).lower()
+            if "maintenance" in msg or "503" in msg or "unavailable" in msg:
+                logger.warning(f"Bitget appears to be under maintenance: {e}")
+            else:
+                logger.error(f"Exchange error: {e}")
+            raise
+        except ccxt.RateLimitExceeded as e:
+            logger.warning(f"Rate limit hit, backing off: {e}")
+            time.sleep(5)
             raise
 
         candles = []

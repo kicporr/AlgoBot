@@ -581,7 +581,16 @@ class TradingBot:
             )
             
             if coin_size <= 0:
-                self.logger.debug(f"[{symbol}] Position sizer returned 0 — skipping trade")
+                sizer_metrics = state["position_sizer"].get_last_metrics()
+                self.logger.info(
+                    f"[{symbol}] Position sizer returned 0 — trade skipped | "
+                    f"method={state['position_sizer'].method} | "
+                    f"kelly={sizer_metrics.get('kelly_pct', 0):.4f} | "
+                    f"reason={sizer_metrics.get('reject_reason', 'unknown')} | "
+                    f"capital=${self.balance:.2f} | "
+                    f"atr={avg_atr:.4f} | "
+                    f"loss_streak={consecutive_losses}"
+                )
                 self.signal_repo.insert({
                     "timestamp": candle["timestamp"],
                     "strategy": f"mtf_macd:{symbol}",

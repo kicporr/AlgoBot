@@ -51,6 +51,7 @@ class KellyPositionSizer:
         # Track sizing decisions for audit
         self.last_size: float = 0.0
         self.last_kelly_pct: float = 0.0
+        self._last_reject: str = ""
 
     def calculate(
         self,
@@ -81,6 +82,7 @@ class KellyPositionSizer:
             Position size in BTC (0 if no position should be taken).
         """
         if btc_price <= 0 or capital <= 0:
+            self._last_reject = f"invalid input: btc_price={btc_price}, capital={capital}"
             return 0.0
 
         # Volatility adjustment: shrink position when volatility is elevated
@@ -119,6 +121,7 @@ class KellyPositionSizer:
 
             if half_kelly <= 0:
                 self.last_size = 0.0
+                self._last_reject = f"kelly≤0: wr={win_rate:.2f} b={b_ratio:.2f} kelly_f={kelly_f:.4f}"
                 return 0.0
 
             # Risk capital this trade can risk
@@ -137,6 +140,7 @@ class KellyPositionSizer:
 
         # Minimum position
         if btc_size < self.min_position_btc:
+            self._last_reject = f"below min: {btc_size:.8f} < {self.min_position_btc}"
             btc_size = 0.0
 
         self.last_size = btc_size
@@ -154,4 +158,5 @@ class KellyPositionSizer:
         return {
             "kelly_pct": round(self.last_kelly_pct, 4),
             "position_btc": self.last_size,
+            "reject_reason": self._last_reject,
         }

@@ -78,6 +78,11 @@ class MTF_MACD_Elder(BaseStrategy):
 
     def _update_d1_trend(self):
         """Recalculate D1 MACD from cached closes."""
+        # Prune to prevent unbounded growth (~10 years = 3650 entries, keep 500)
+        max_d1_cache = 500
+        if len(self._d1_closes) > max_d1_cache:
+            self._d1_closes = self._d1_closes[-max_d1_cache:]
+
         closes = pd.Series(self._d1_closes)
         macd_line, signal_line, histogram = self.ic.macd(
             closes, self.fast, self.slow, self.signal_period
@@ -108,11 +113,17 @@ class MTF_MACD_Elder(BaseStrategy):
     def on_candle(self, candle: dict, features: pd.Series) -> Signal:
         """Generate signal for a 1H candle.
 
-        Uses pre-computed features from the FeatureEngine. The features
-        Series contains MACD values from the engine's indicator calculator.
+        Uses pre-computed features from the FeatureEngine.
 
         Entry: 1H MACD crosses signal in D1 trend direction
-        Exit: MACD crosses opposite direction, OR trailing stop breached
+
+        Exit responsibility split (live mode):
+          - PositionTracker: TP, trailing stop, ATR stop, timeout (checked first)
+          - MTF_MACD (here):   MACD opposite cross signal exit
+          - Orchestrator:      opposite signal safety net (line ~436)
+
+        In backtest mode, all exits run through this method (no PositionTracker).
+        The trailing/ATR stops here are BACKTEST-ONLY; live uses PositionTracker.
         """
         self._bar_counter += 1
 
@@ -184,10 +195,12 @@ class MTF_MACD_Elder(BaseStrategy):
         close: float,
         candle: dict,
     ) -> Signal:
-        """Check if we should exit current position.
+        """Check if we should exit current position (BACKTEST path).
 
-        Returns Signal.FLAT if no exit condition met, otherwise the
-        opposite signal (LONG to close short, SHORT to close long).
+        In live mode, PositionTracker handles price-based exits (TP, trailing, ATR, timeout).
+        This method handles signal-based exits (MACD cross) in both modes.
+        Trailing/ATR checks below are used in backtest; in live mode they are
+        superseded by PositionTracker.update() which runs first.
         """
         # 1. MACD opposite cross
         bars_held = self._bar_counter - self.entry_bar
