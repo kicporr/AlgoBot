@@ -30,7 +30,8 @@ class CircuitBreaker:
     """Multi-level circuit breaker with daily/weekly loss tracking."""
 
     def __init__(self, config: dict):
-        cb_cfg = config.get("risk", {}).get("circuit_breaker", {})
+        risk_cfg = config.get("risk", {})
+        cb_cfg = risk_cfg.get("circuit_breaker", {})
 
         self.max_drawdown_pct = cb_cfg.get("max_drawdown_pct", 20) / 100
         self.daily_limit_pct = cb_cfg.get("daily_loss_limit_pct", 5) / 100
@@ -38,6 +39,10 @@ class CircuitBreaker:
         self.consecutive_halt = cb_cfg.get("consecutive_loss_halt", 5)
         self.consecutive_warn = cb_cfg.get("consecutive_loss_warn", 3)
         self.vol_mult = cb_cfg.get("volatility_circuit_mult", 5.0)
+
+        # Loss reference: "peak" (peak equity) or "initial" (starting capital)
+        self.loss_reference = cb_cfg.get("loss_reference", "peak")
+        self.initial_capital = risk_cfg.get("initial_capital", 10000.0)
 
         # Doom loop detection
         doom_cfg = cb_cfg.get("doom_loop", {})
@@ -118,12 +123,13 @@ class CircuitBreaker:
             return self._halt(f"Max drawdown exceeded: {dd:.1%}")
 
         # ── 2. Daily Loss Limit ───────────────────────────────
-        if self.daily_pnl < 0 and abs(self.daily_pnl) / balance >= self.daily_limit_pct:
-            return self._halt(f"Daily loss limit: ${self.daily_pnl:.0f}")
+        loss_ref = self.peak_equity if self.loss_reference == "peak" and self.peak_equity else self.initial_capital
+        if self.daily_pnl < 0 and abs(self.daily_pnl) / loss_ref >= self.daily_limit_pct:
+            return self._halt(f"Daily loss limit: ${self.daily_pnl:.0f} ({abs(self.daily_pnl)/loss_ref*100:.1f}% of {self.loss_reference})")
 
         # ── 3. Weekly Loss Limit ──────────────────────────────
-        if self.weekly_pnl < 0 and abs(self.weekly_pnl) / balance >= self.weekly_limit_pct:
-            return self._halt(f"Weekly loss limit: ${self.weekly_pnl:.0f}")
+        if self.weekly_pnl < 0 and abs(self.weekly_pnl) / loss_ref >= self.weekly_limit_pct:
+            return self._halt(f"Weekly loss limit: ${self.weekly_pnl:.0f} ({abs(self.weekly_pnl)/loss_ref*100:.1f}% of {self.loss_reference})")
 
         # ── 4. Consecutive Losses ─────────────────────────────
         self._count_consecutive(recent_trades_pnl)

@@ -33,6 +33,12 @@ class BaseStrategy(ABC):
         """Optional: called when a higher-timeframe candle closes."""
         pass
     
+    def on_position_closed(self):
+        """Optional: called by orchestrator when a position is closed externally (PositionTracker, manual, etc.).
+
+        Strategies that track internal position state should override this to stay in sync."""
+        pass
+
     def retrain(self, historical_data: pd.DataFrame):
         """Optional: retrain ML model on new data."""
         pass

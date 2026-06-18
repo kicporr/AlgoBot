@@ -193,7 +193,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     import time
                     now_ms = int(time.time() * 1000)
                     target_ts = now_ms - 24 * 60 * 60 * 1000
-                    candles = self.bot.candle_repo.get_range(target_ts - 150_000, target_ts + 150_000, limit=1)
+                    candles = self.bot.candle_repo.get_range(target_ts - 150_000, target_ts + 150_000, limit=1, symbol=symbol)
                     if candles:
                         price_24h = candles[0]["close"]
                 except Exception as e:

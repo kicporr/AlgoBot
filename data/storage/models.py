@@ -7,9 +7,10 @@ Base = declarative_base()
 
 
 class Candle(Base):
-    """Raw 1-minute OHLCV candle."""
+    """Raw 1-minute OHLCV candle — one per symbol per timestamp."""
     __tablename__ = "candles_1m"
 
+    symbol = Column(Text, primary_key=True, default="BTC/USDT:USDT")
     timestamp = Column(BigInteger, primary_key=True)
     open = Column(Float, nullable=False)
     high = Column(Float, nullable=False)

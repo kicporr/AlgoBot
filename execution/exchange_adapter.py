@@ -18,36 +18,44 @@ class ExchangeAdapter:
         adapter.create_limit_buy_order("BTC/USDT", 0.001, 50000)
     """
 
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, exchange=None):
         ex_cfg = config.get("exchange", {})
         self.name = ex_cfg.get("name", "bitget")
         self.symbol = ex_cfg.get("symbols", ["BTC/USDT"])[0]
 
-        # Bitget 3-field auth
-        api_key = config.get("BITGET_API_KEY", "")
-        secret = config.get("BITGET_SECRET_KEY", "")
-        passphrase = config.get("BITGET_PASSPHRASE", "")
+        # Use shared ccxt instance if provided, otherwise create one
+        if exchange is not None:
+            self.exchange = exchange
+            self._shared = True
+        else:
+            api_key = config.get("BITGET_API_KEY", "")
+            secret = config.get("BITGET_SECRET_KEY", "")
+            passphrase = config.get("BITGET_PASSPHRASE", "")
 
-        ex_type = ex_cfg.get("type", "spot")
-        self.exchange = ccxt.bitget({
-            "apiKey": api_key,
-            "secret": secret,
-            "password": passphrase,  # ccxt uses 'password' for the passphrase
-            "enableRateLimit": True,
-            "options": {"defaultType": ex_type},
-        })
+            ex_type = ex_cfg.get("type", "spot")
+            self.exchange = ccxt.bitget({
+                "apiKey": api_key,
+                "secret": secret,
+                "password": passphrase,
+                "enableRateLimit": True,
+                "options": {"defaultType": ex_type},
+            })
+            self._shared = False
 
-        # Load markets to validate symbol
-        try:
-            self.exchange.load_markets()
-            logger.info(f"Bitget exchange adapter initialized (authenticated: {bool(api_key)})")
-        except ccxt.AuthenticationError:
-            logger.error(
-                "Bitget auth failed — check BITGET_API_KEY, BITGET_SECRET_KEY, and BITGET_PASSPHRASE"
-            )
-            raise
-        except Exception as e:
-            logger.warning(f"Bitget market load warning (continuing): {e}")
+        # Load markets to validate symbol (only if we own the instance)
+        if not self._shared:
+            try:
+                self.exchange.load_markets()
+                logger.info(f"Bitget exchange adapter initialized (authenticated: {bool(api_key)})")
+            except ccxt.AuthenticationError:
+                logger.error(
+                    "Bitget auth failed — check BITGET_API_KEY, BITGET_SECRET_KEY, and BITGET_PASSPHRASE"
+                )
+                raise
+            except Exception as e:
+                logger.warning(f"Bitget market load warning (continuing): {e}")
+        else:
+            logger.info("Bitget exchange adapter using shared ccxt instance")
 
     def fetch_ohlcv(
         self, symbol: Optional[str] = None, timeframe: str = "1h",
@@ -137,3 +145,23 @@ class ExchangeAdapter:
     def get_server_time(self) -> int:
         """Get exchange server time in ms."""
         return self.exchange.fetch_time()
+
+    def get_market_limits(self, symbol: Optional[str] = None) -> dict:
+        """Get market limits for a symbol (min amount, min cost, price precision, etc.).
+
+        Returns dict with keys: min_amount, min_cost, amount_precision, price_precision.
+        Values are 0/None if market data is unavailable.
+        """
+        symbol = symbol or self.symbol
+        try:
+            market = self.exchange.market(symbol)
+            limits = market.get("limits", {})
+            precision = market.get("precision", {})
+            return {
+                "min_amount": limits.get("amount", {}).get("min", 0.0) or 0.0,
+                "min_cost": limits.get("cost", {}).get("min", 0.0) or 0.0,
+                "amount_precision": precision.get("amount", None),
+                "price_precision": precision.get("price", None),
+            }
+        except Exception:
+            return {"min_amount": 0.0, "min_cost": 0.0, "amount_precision": None, "price_precision": None}

@@ -135,10 +135,29 @@ class DatabaseManager:
             except Exception as e:
                 logger.error(f"SQLite data migration from old tables failed: {e}")
 
-        # Run automatic migrations to add new columns to 'trades' table if they are missing
+        # Run automatic migrations to add new columns to existing tables
         try:
             with self.engine.connect() as conn:
                 if db_type == "sqlite":
+                    # --- candles_1m: add 'symbol' column if missing ---
+                    cursor = conn.exec_driver_sql("PRAGMA table_info(candles_1m)")
+                    candle_columns = [row[1] for row in cursor.fetchall()]
+                    if candle_columns and "symbol" not in candle_columns:
+                        logger.info("SQLite: migrating candles_1m — adding 'symbol' column...")
+                        conn.exec_driver_sql("ALTER TABLE candles_1m RENAME TO candles_1m_old")
+                        conn.commit()
+                        # Create new table with composite PK via SQLAlchemy
+                        Base.metadata.create_all(self.engine, tables=[Base.metadata.tables["candles_1m"]])
+                        # Copy old data, setting symbol to a default
+                        conn.exec_driver_sql(
+                            "INSERT INTO candles_1m (symbol, timestamp, open, high, low, close, volume) "
+                            "SELECT 'BTC/USDT:USDT', timestamp, open, high, low, close, volume FROM candles_1m_old"
+                        )
+                        conn.exec_driver_sql("DROP TABLE candles_1m_old")
+                        logger.info("SQLite: candles_1m migration complete (symbol column added).")
+                        conn.commit()
+
+                    # --- trades: add theoretical columns if missing ---
                     cursor = conn.exec_driver_sql("PRAGMA table_info(trades)")
                     columns = [row[1] for row in cursor.fetchall()]
                     if "theoretical_entry_price" not in columns:
@@ -203,16 +222,19 @@ class CandleRepository:
     def __init__(self, db: DatabaseManager):
         self.db = db
     
-    def insert(self, candle: dict) -> bool:
+    def insert(self, candle: dict, symbol: str = "BTC/USDT:USDT") -> bool:
         """Insert a single candle. Returns True on success, False if duplicate."""
         try:
+            sym = candle.get("symbol", symbol)
+            ts = candle["timestamp"]
             with self.db.session() as session:
-                existing = session.get(Candle, candle["timestamp"])
+                existing = session.get(Candle, (sym, ts))
                 if existing:
                     return False  # Duplicate — skip silently
-                
+
                 record = Candle(
-                    timestamp=candle["timestamp"],
+                    symbol=sym,
+                    timestamp=ts,
                     open=candle["open"],
                     high=candle["high"],
                     low=candle["low"],
@@ -224,18 +246,20 @@ class CandleRepository:
         except Exception as e:
             logger.error(f"Failed to insert candle ts={candle['timestamp']}: {e}")
             return False
-    
-    def insert_batch(self, candles: List[dict]) -> int:
+
+    def insert_batch(self, candles: List[dict], symbol: str = "BTC/USDT:USDT") -> int:
         """Insert multiple candles efficiently. Returns count of inserted rows.
-        
+
         Uses bulk insert for performance. Skips duplicates.
         """
         if not candles:
             return 0
-        
+
         try:
+            sym = candles[0].get("symbol", symbol) if candles else symbol
             records = [
                 Candle(
+                    symbol=c.get("symbol", sym),
                     timestamp=c["timestamp"],
                     open=c["open"],
                     high=c["high"],
@@ -245,60 +269,56 @@ class CandleRepository:
                 )
                 for c in candles
             ]
-            
+
             with self.db.session() as session:
-                # Get existing timestamps to avoid duplicates
-                timestamps = [r.timestamp for r in records]
-                existing_ts = set(
-                    session.query(Candle.timestamp)
-                    .filter(Candle.timestamp.in_(timestamps))
+                existing_keys = set(
+                    session.query(Candle.symbol, Candle.timestamp)
+                    .filter(Candle.symbol == sym)
                     .all()
                 )
-                existing_ts = {ts[0] for ts in existing_ts}
-                
-                new_records = [r for r in records if r.timestamp not in existing_ts]
-                
+                new_records = [r for r in records if (r.symbol, r.timestamp) not in existing_keys]
+
                 if new_records:
                     session.bulk_save_objects(new_records)
-                
+
                 return len(new_records)
         except Exception as e:
             logger.error(f"Batch insert failed: {e}")
             return 0
     
-    def get_latest(self) -> Optional[dict]:
-        """Get the most recent candle."""
+    def get_latest(self, symbol: Optional[str] = None) -> Optional[dict]:
+        """Get the most recent candle, optionally filtered by symbol."""
         try:
             with self.db.session() as session:
-                candle = (
-                    session.query(Candle)
-                    .order_by(Candle.timestamp.desc())
-                    .first()
-                )
+                q = session.query(Candle)
+                if symbol:
+                    q = q.filter(Candle.symbol == symbol)
+                candle = q.order_by(Candle.timestamp.desc()).first()
                 if candle:
                     return self._to_dict(candle)
                 return None
         except Exception as e:
             logger.error(f"Failed to get latest candle: {e}")
             return None
-    
+
     def get_range(
         self,
         start_ts: int,
         end_ts: int,
         limit: int = 10000,
+        symbol: Optional[str] = None,
     ) -> List[dict]:
-        """Get candles in a timestamp range, sorted ascending."""
+        """Get candles in a timestamp range, sorted ascending. Optionally filter by symbol."""
         try:
             with self.db.session() as session:
-                candles = (
+                q = (
                     session.query(Candle)
                     .filter(Candle.timestamp >= start_ts)
                     .filter(Candle.timestamp <= end_ts)
-                    .order_by(Candle.timestamp.asc())
-                    .limit(limit)
-                    .all()
                 )
+                if symbol:
+                    q = q.filter(Candle.symbol == symbol)
+                candles = q.order_by(Candle.timestamp.asc()).limit(limit).all()
                 return [self._to_dict(c) for c in candles]
         except Exception as e:
             logger.error(f"Failed to get candle range: {e}")

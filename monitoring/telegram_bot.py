@@ -36,19 +36,29 @@ class TelegramAlerter:
         self.chat_id = config.get("TELEGRAM_CHAT_ID", "")
         self.enabled = bool(self.token and self.chat_id)
 
-        # Optional: throttle alerts to avoid spam
+        # Throttle alerts to avoid spam
         alert_cfg = tg_cfg.get("alerts", {}) if isinstance(tg_cfg, dict) else {}
         self.min_interval = alert_cfg.get("min_interval_seconds", 5)
         self._last_send = 0.0
         self._lock = threading.Lock()
+
+        # Micro-queue: accumulate dropped alerts, send as summary when interval allows
+        self._dropped_count = 0
+        self._dropped_types: dict[str, int] = {}  # e.g. {"trade_close": 3, "risk_snapshot": 1}
 
         if self.enabled:
             logger.info(f"Telegram bot enabled (chat={self.chat_id})")
         else:
             logger.info("Telegram alerts disabled (no token or chat_id)")
 
-    def alert(self, message: str, force: bool = False):
-        """Send a plain text alert with optional rate limiting."""
+    def alert(self, message: str, force: bool = False, category: str = ""):
+        """Send a plain text alert with rate limiting.
+
+        Args:
+            message: Formatted message to send.
+            force: If True, bypass rate limit and send immediately.
+            category: Optional label (e.g. 'trade_close', 'risk') for drop tracking.
+        """
         if not self.enabled:
             logger.info(f"[TG] {message}")
             return
@@ -57,10 +67,31 @@ class TelegramAlerter:
         with self._lock:
             now = time.monotonic()
             if not force and (now - self._last_send) < self.min_interval:
+                self._dropped_count += 1
+                if category:
+                    self._dropped_types[category] = self._dropped_types.get(category, 0) + 1
+                logger.debug(f"[TG] Rate-limited drop (total dropped: {self._dropped_count}): {message[:80]}...")
                 return
+
+            # Flush any pending dropped-count summary before sending new message
+            pending_summary = self._flush_dropped_summary()
             self._last_send = now
 
+        if pending_summary:
+            self._send(pending_summary)
         self._send(message)
+
+    def _flush_dropped_summary(self) -> str:
+        """Build a one-line summary of dropped alerts and reset counters."""
+        if self._dropped_count == 0:
+            return ""
+        summary = f"📦 {self._dropped_count} alert(s) suppressed (rate limit)"
+        if self._dropped_types:
+            detail = ", ".join(f"{k}:{v}" for k, v in sorted(self._dropped_types.items()))
+            summary += f" [{detail}]"
+        self._dropped_count = 0
+        self._dropped_types.clear()
+        return summary
 
     def trade_open(
         self, side: str, price: float, size: float,

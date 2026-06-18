@@ -20,6 +20,11 @@ class MockExchangeAdapter:
         self.cancel_order = MagicMock()
         self.fetch_order = MagicMock()
         self.fetch_ticker = MagicMock()
+        # get_market_limits returns no limits by default (test-friendly)
+        self.get_market_limits = MagicMock(return_value={
+            "min_amount": 0.0, "min_cost": 0.0,
+            "amount_precision": None, "price_precision": None,
+        })
 
 
 class TestOrderManager:

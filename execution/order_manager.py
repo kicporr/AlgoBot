@@ -55,7 +55,29 @@ class OrderManager:
             Dict containing status, filled amount, and average execution price.
         """
         logger.info(f"Initiating Maker-only {side.upper()} order for {amount:.6f} {symbol}")
-        
+
+        # Validate minimum order size against exchange limits
+        limits = self.exchange.get_market_limits(symbol)
+        min_amount = limits.get("min_amount", 0.0)
+        min_cost = limits.get("min_cost", 0.0)
+        if min_amount > 0 and amount < min_amount:
+            logger.error(
+                f"Order amount {amount:.6f} below exchange minimum {min_amount:.6f} for {symbol}. "
+                f"Order rejected."
+            )
+            return {"status": "failed", "filled": 0.0, "average": 0.0, "order_id": None,
+                    "reason": f"amount below minimum ({amount:.6f} < {min_amount:.6f})"}
+        if min_cost > 0:
+            ticker = self.exchange.fetch_ticker(symbol)
+            est_cost = amount * ticker.get("last", 0)
+            if est_cost < min_cost and est_cost > 0:
+                logger.error(
+                    f"Order cost ${est_cost:.2f} below exchange minimum ${min_cost:.2f} for {symbol}. "
+                    f"Order rejected."
+                )
+                return {"status": "failed", "filled": 0.0, "average": 0.0, "order_id": None,
+                        "reason": f"cost below minimum (${est_cost:.2f} < ${min_cost:.2f})"}
+
         remaining_amount = amount
         total_filled = 0.0
         pnl_sum = 0.0  # To compute weighted average price

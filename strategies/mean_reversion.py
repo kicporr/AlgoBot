@@ -101,6 +101,11 @@ class MeanReversion(BaseStrategy):
 
         return Signal.FLAT
 
+    def on_position_closed(self):
+        """Synchronize internal state when position is closed externally."""
+        self.in_position = False
+        self.position_side = ""
+
     def retrain(self, historical_data: pd.DataFrame):
         """Not applicable for rule-based strategy."""
         pass

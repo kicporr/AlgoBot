@@ -117,7 +117,6 @@ features:
 # --- Strategies ---
 strategies:
 
-  
   # Multi-Timeframe MACD + Elder Filter
   mtf_macd_elder:
     enabled: true

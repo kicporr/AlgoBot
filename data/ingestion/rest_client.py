@@ -26,7 +26,7 @@ class BitgetRESTClient:
         df = client.fetch_ohlcv_dataframe("BTC/USDT", "1h", days_back=30)
     """
 
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, exchange=None):
         ex_cfg = config.get("exchange", {})
         self.symbol = ex_cfg.get("symbols", ["BTC/USDT"])[0]
 
@@ -35,24 +35,29 @@ class BitgetRESTClient:
         self._last_request_time = 0.0
         self._min_interval = 1.0 / self.max_rps
 
-        # Bitget requires 3-field auth
-        api_key = config.get("BITGET_API_KEY", "")
-        secret = config.get("BITGET_SECRET_KEY", "")
-        passphrase = config.get("BITGET_PASSPHRASE", "")
+        # Use shared ccxt instance if provided, otherwise create one
+        if exchange is not None:
+            self.exchange = exchange
+            self._shared = True
+        else:
+            api_key = config.get("BITGET_API_KEY", "")
+            secret = config.get("BITGET_SECRET_KEY", "")
+            passphrase = config.get("BITGET_PASSPHRASE", "")
 
-        ex_type = ex_cfg.get("type", "spot")
-        self.exchange = ccxt.bitget({
-            "apiKey": api_key,
-            "secret": secret,
-            "password": passphrase,  # ccxt uses 'password' for passphrase
-            "enableRateLimit": True,
-            "options": {"defaultType": ex_type},
-        })
+            ex_type = ex_cfg.get("type", "spot")
+            self.exchange = ccxt.bitget({
+                "apiKey": api_key,
+                "secret": secret,
+                "password": passphrase,
+                "enableRateLimit": True,
+                "options": {"defaultType": ex_type},
+            })
+            self._shared = False
 
-        # Verify connection
         logger.info(
             f"Bitget REST client initialized: {self.exchange.name} "
-            f"(authenticated: {bool(api_key)})"
+            f"(authenticated: {bool(config.get('BITGET_API_KEY', ''))}, "
+            f"shared={getattr(self, '_shared', False)})"
         )
 
     # ─── Rate Limiting ──────────────────────────────────────────

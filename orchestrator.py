@@ -80,10 +80,28 @@ class TradingBot:
         self.trade_repo = TradeRepository(self.db)
         self.signal_repo = SignalRepository(self.db)
         
-        # REST client for backfilling
+        # Shared ccxt exchange instance — one rate limiter for all API calls
+        import ccxt
+        ex_cfg = self.config.get("exchange", {})
+        ex_type = ex_cfg.get("type", "swap")
+        self._ccxt_exchange = ccxt.bitget({
+            "apiKey": self.config.get("BITGET_API_KEY", ""),
+            "secret": self.config.get("BITGET_SECRET_KEY", ""),
+            "password": self.config.get("BITGET_PASSPHRASE", ""),
+            "enableRateLimit": True,
+            "options": {"defaultType": ex_type},
+        })
+        # Load markets early (fail-fast if auth is wrong)
+        try:
+            self._ccxt_exchange.load_markets()
+            self.logger.info("Shared ccxt exchange: markets loaded, connection verified")
+        except Exception as e:
+            self.logger.warning(f"Could not load markets at init (will retry later): {e}")
+
+        # REST client for backfilling (uses shared ccxt instance)
         self.rest_client: Optional[BitgetRESTClient] = None
         try:
-            self.rest_client = BitgetRESTClient(self.config)
+            self.rest_client = BitgetRESTClient(self.config, exchange=self._ccxt_exchange)
             self.logger.info("Bitget REST client initialized")
         except Exception as e:
             self.logger.warning(f"REST client unavailable: {e}")
@@ -126,17 +144,17 @@ class TradingBot:
                 "latest_features": {},
             }
 
-        # WebSocket clients (one per symbol)
+        # WebSocket clients (one per symbol, sharing REST client)
         self.ws_clients = {}
         if has_websocket():
             for symbol in self.symbols:
                 symbol_cfg = self.symbol_states[symbol]["config"]
-                self.ws_clients[symbol] = BitgetWSClient(symbol_cfg)
+                self.ws_clients[symbol] = BitgetWSClient(symbol_cfg, rest_client=self.rest_client)
         else:
             self.logger.warning("websocket-client not installed — live mode disabled")
         
         # ── Execution layer ──────────────────────────────────
-        self.exchange = ExchangeAdapter(self.config)
+        self.exchange = ExchangeAdapter(self.config, exchange=self._ccxt_exchange)
         self.order_manager = OrderManager(self.config, self.exchange)
         
         # Single instances for fallback/backward compatibility
@@ -226,45 +244,71 @@ class TradingBot:
         self.risk_monitor.set_initial_capital(self.initial_capital)
         
         # Prime FeatureEngine and strategy caches from REST API on startup
+        self._priming_success: dict[str, bool] = {s: False for s in self.symbols}
+        self._priming_attempted = False
+        self._priming_warned_for: set[str] = set()
+        self._priming_empty_count: dict[str, int] = {}
+
         if self.rest_client:
-            try:
-                self.logger.info("Priming feature engines and strategy caches from REST API...")
-                for symbol in self.symbols:
-                    self.logger.info(f"Priming caches for {symbol}...")
-                    state = self.symbol_states[symbol]
-                    df_1h = self.rest_client.fetch_days(timeframe="1h", days=30, symbol=symbol)
-                    df_4h = self.rest_client.fetch_days(timeframe="4h", days=30, symbol=symbol)
-                    df_1d = self.rest_client.fetch_days(timeframe="1d", days=45, symbol=symbol)
-                    
-                    if not df_1h.empty:
-                        state["feature_engine"].prime_cache(
-                            df_1h,
-                            df_4h if not df_4h.empty else None,
-                            df_1d if not df_1d.empty else None
-                        )
-                        # Compute initial features to populate self.latest_features
-                        df_feats = state["feature_engine"].bulk_compute(
-                            df_1h,
-                            df_4h if not df_4h.empty else None,
-                            df_1d if not df_1d.empty else None
-                        )
-                        if not df_feats.empty:
-                            state["latest_features"] = df_feats.iloc[-1].to_dict()
-                            self.latest_features = state["latest_features"]  # compatibility
-                            self.logger.info(f"Feature engine primed for {symbol}. Calculated features count: {len(state['latest_features'])}")
-                    
-                    if not df_1d.empty:
-                        mtf_macd = state["strategies"].get("mtf_macd")
-                        if mtf_macd:
-                            mtf_macd._d1_closes = []
-                            for _, row in df_1d.iterrows():
-                                mtf_macd.on_higher_tf_candle(row.to_dict(), "1d")
-                            self.logger.info(
-                                f"MTF MACD strategy primed for {symbol}. D1 closes: {len(mtf_macd._d1_closes)}, "
-                                f"Trend: {mtf_macd.d1_trend}, MACD: {mtf_macd.d1_macd:.2f}, Signal: {mtf_macd.d1_signal:.2f}"
+            import time as _time
+            max_retries = 3
+            for symbol in self.symbols:
+                state = self.symbol_states[symbol]
+                for attempt in range(1, max_retries + 1):
+                    try:
+                        self.logger.info(f"Priming caches for {symbol} (attempt {attempt}/{max_retries})...")
+                        df_1h = self.rest_client.fetch_days(timeframe="1h", days=30, symbol=symbol)
+                        df_4h = self.rest_client.fetch_days(timeframe="4h", days=30, symbol=symbol)
+                        df_1d = self.rest_client.fetch_days(timeframe="1d", days=45, symbol=symbol)
+
+                        if not df_1h.empty:
+                            state["feature_engine"].prime_cache(
+                                df_1h,
+                                df_4h if not df_4h.empty else None,
+                                df_1d if not df_1d.empty else None
                             )
-            except Exception as e:
-                self.logger.error(f"Error priming caches on startup: {e}", exc_info=True)
+                            df_feats = state["feature_engine"].bulk_compute(
+                                df_1h,
+                                df_4h if not df_4h.empty else None,
+                                df_1d if not df_1d.empty else None
+                            )
+                            if not df_feats.empty:
+                                state["latest_features"] = df_feats.iloc[-1].to_dict()
+                                self.latest_features = state["latest_features"]
+                                self._priming_success[symbol] = True
+                                self.logger.info(f"Feature engine primed for {symbol} ({len(state['latest_features'])} features)")
+
+                        if not df_1d.empty:
+                            mtf_macd = state["strategies"].get("mtf_macd")
+                            if mtf_macd:
+                                mtf_macd._d1_closes = []
+                                for _, row in df_1d.iterrows():
+                                    mtf_macd.on_higher_tf_candle(row.to_dict(), "1d")
+                                self.logger.info(
+                                    f"MTF MACD primed for {symbol}: {len(mtf_macd._d1_closes)} D1 closes, "
+                                    f"Trend={mtf_macd.d1_trend}"
+                                )
+                        break  # Success — skip remaining retries
+
+                    except Exception as e:
+                        self.logger.warning(f"Priming attempt {attempt}/{max_retries} failed for {symbol}: {e}")
+                        if attempt < max_retries:
+                            _time.sleep(5)
+
+            self._priming_attempted = True
+            failed = [s for s, ok in self._priming_success.items() if not ok]
+            if failed:
+                self.logger.warning(
+                    f"⚠️ Priming FAILED for: {failed}. "
+                    "The bot may stay idle until enough candles arrive via WebSocket."
+                )
+                self.telegram.alert(
+                    f"⚠️ *Priming nieudany dla:* `{', '.join(failed)}`\n"
+                    f"Bot będzie bezczynny dopóki nie zbierze wystarczającej liczby świec przez WebSocket (~2-3 dni).",
+                    force=True,
+                )
+            else:
+                self.logger.info("All symbols primed successfully.")
 
         self.telegram.alert("🚀 bocik started")
 
@@ -321,12 +365,13 @@ class TradingBot:
     
     def _on_1m_candle(self, symbol: str, candle: dict):
         """Called on every validated 1m candle from WebSocket.
-        
+
         Validation and resampling are handled by the WS client internally.
         Our job: persist to the database for backtesting and analysis.
+        All symbols are stored (composite PK: symbol + timestamp).
         """
-        if symbol == self.symbols[0]:
-            self.candle_repo.insert(candle)
+        candle["symbol"] = symbol
+        self.candle_repo.insert(candle)
     
     def _on_1h_candle(self, symbol: str, candle: dict):
         """Main trading logic — called when a new 1H candle completes.
@@ -346,11 +391,29 @@ class TradingBot:
             features = state["feature_engine"].process_candle(candle)
             
             if not features:
+                # Warn if stuck without features after priming failure
+                if self._priming_attempted and not self._priming_success.get(symbol, True):
+                    cnt = self._priming_empty_count.get(symbol, 0) + 1
+                    self._priming_empty_count[symbol] = cnt
+                    if cnt in (10, 60, 360):  # ~10h, 2.5d, 15d of waiting
+                        self.logger.warning(
+                            f"[{symbol}] Still waiting for enough candles after {cnt} bars "
+                            f"(priming failed). Consider restarting or checking REST API."
+                        )
                 return  # Not enough history yet
             
             state["latest_features"] = features
             self.latest_features = features  # compatibility
-            
+
+            # ⚠️ Warn if priming previously failed for this symbol
+            if (self._priming_attempted and not self._priming_success.get(symbol, True)
+                    and symbol not in self._priming_warned_for):
+                self._priming_warned_for.add(symbol)
+                self.logger.warning(
+                    f"[{symbol}] Features now available via WebSocket (priming previously failed). "
+                    f"Bot trading logic is active for this symbol."
+                )
+
             # ── Check symbol specific positions ────────────
             open_pos = state["open_positions"]
             in_position = len(open_pos) > 0
@@ -591,7 +654,11 @@ class TradingBot:
             return
         pos = state["open_positions"].pop(side)
         state["position_tracker"].exit()
-        
+
+        # Sync strategy internal state (prevents phantom position bug)
+        for strategy in state["strategies"].values():
+            strategy.on_position_closed()
+
         # Sync with compatibility dict
         self.open_positions.pop(f"{symbol}:{side}", None)
         self.open_positions.pop(side, None)
@@ -864,9 +931,19 @@ class TradingBot:
         self.stop("Emergency stop")
 
     def reset_circuit_breaker(self):
-        """Manually reset circuit breaker and clear recent losses to resume trading."""
+        """Manually reset circuit breaker and trim the losing streak tail to resume trading.
+
+        Instead of wiping the entire trade history, only the consecutive losing trades
+        at the tail are removed. This preserves win/loss context for position sizing
+        while preventing an immediate re-trigger of the circuit breaker.
+        """
         self.logger.info("Manually resetting circuit breaker...")
-        self.recent_trades_pnl = []  # Clear trade history to clear consecutive losses
+        trimmed = 0
+        while self.recent_trades_pnl and self.recent_trades_pnl[-1] < 0:
+            self.recent_trades_pnl.pop()
+            trimmed += 1
+        if trimmed:
+            self.logger.info(f"Trimmed {trimmed} losing trade(s) from PnL tail (history preserved: {len(self.recent_trades_pnl)} trades)")
         self.circuit_breaker.reset_manual_halt()
         self.circuit_breaker_alert_sent = False
         self.telegram.alert("🔄 Circuit breaker manually reset. Bot resumed trading.", force=True)

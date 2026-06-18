@@ -229,6 +229,18 @@ class MTF_MACD_Elder(BaseStrategy):
 
     # ─── Retrain (for walk-forward) ────────────────────────────
 
+    def on_position_closed(self):
+        """Called by orchestrator when position is closed externally (e.g. PositionTracker).
+
+        Synchronizes internal state without resetting D1 trend context.
+        """
+        self.in_position = False
+        self.position_side = ""
+        self.entry_price = 0.0
+        self.entry_bar = 0
+        self.highest_since_entry = 0.0
+        self.lowest_since_entry = float("inf")
+
     def retrain(self, historical_data: pd.DataFrame):
         """Not applicable for rule-based strategy — included for interface compatibility."""
         pass

@@ -52,7 +52,7 @@ class BitgetWSClient:
 
     WS_URL = "wss://ws.bitget.com/v2/ws/public"
 
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, rest_client: Optional["BitgetRESTClient"] = None):
         self.config = config
         ex_cfg = config.get("exchange", {})
         self.symbol = ex_cfg.get("symbols", ["BTC/USDT"])[0]
@@ -68,14 +68,18 @@ class BitgetWSClient:
         self.validator = DataValidator(config)
         self.resampler = OHLCVResampler()
 
-        # REST client for backfilling
-        self.rest_client: Optional["BitgetRESTClient"] = None
-        if _HAS_REST:
+        # REST client for backfilling — use shared if provided
+        if rest_client is not None:
+            self.rest_client = rest_client
+        elif _HAS_REST:
             try:
                 from .rest_client import BitgetRESTClient
                 self.rest_client = BitgetRESTClient(config)
             except Exception as e:
                 logger.warning(f"REST client unavailable: {e}")
+                self.rest_client = None
+        else:
+            self.rest_client = None
 
         # Internal queue
         self._queue: Queue = Queue(maxsize=5000)
