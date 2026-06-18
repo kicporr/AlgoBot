@@ -71,6 +71,9 @@ class MetaLabeler:
             f"training_samples={self.training_samples}"
         )
 
+        # Try to load pre-trained production model
+        self._load_pretrained()
+
     # ─── Public API ────────────────────────────────────────────
 
     def is_ready(self) -> bool:
@@ -205,6 +208,35 @@ class MetaLabeler:
             return False
 
     # ─── Internal ──────────────────────────────────────────────
+
+    def _load_pretrained(self):
+        """Load pre-trained model from models/meta_labeler_production.pkl if available."""
+        import os, pickle
+        model_path = os.path.join(os.path.dirname(__file__), "..", "models", "meta_labeler_production.pkl")
+        if not os.path.exists(model_path):
+            logger.info("No pre-trained MetaLabeler model found — will train from live data")
+            return
+        try:
+            with open(model_path, "rb") as f:
+                data = pickle.load(f)
+            if data is None or not isinstance(data, dict):
+                return
+            self.model = data["model"]
+            self._feature_names = data["feature_names"]
+            self._trained = True
+            self._train_samples = data.get("train_samples", 0)
+            self._train_accuracy = data.get("val_accuracy", 0.0)
+            # Restore config from saved model
+            saved_cfg = data.get("config", {})
+            self.min_confidence = saved_cfg.get("min_confidence", self.min_confidence)
+            self._model_params.update(saved_cfg.get("model_params", {}))
+            logger.info(
+                f"Loaded pre-trained MetaLabeler: {self._train_samples} samples, "
+                f"{len(self._feature_names)} features, val_acc={self._train_accuracy:.3f}, "
+                f"trained={data.get('trained_at', 'unknown')}"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to load pre-trained MetaLabeler: {e} — will train from live data")
 
     def _predict(self, features: dict) -> float:
         """Predict probability that a signal will be profitable.
