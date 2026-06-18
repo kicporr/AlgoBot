@@ -409,7 +409,10 @@ class BitgetWSClient:
                 valid, _ = self.validator.validate_batch(missed)
                 logger.info(f"Backfilled {len(valid)} missed candles")
                 for c in valid:
-                    self._queue.put(c)
+                    try:
+                        self._queue.put_nowait(c)
+                    except Exception:
+                        logger.warning("Queue full during backfill — dropping candle")
                     self.last_candle_ts = max(self.last_candle_ts, c["timestamp"])
         except Exception as e:
             logger.warning(f"Backfill missed failed: {e}")

@@ -123,7 +123,7 @@ class CircuitBreaker:
             return self._halt(f"Max drawdown exceeded: {dd:.1%}")
 
         # ── 2. Daily Loss Limit ───────────────────────────────
-        loss_ref = self.peak_equity if self.loss_reference == "peak" and self.peak_equity else self.initial_capital
+        loss_ref = self.peak_equity if (self.loss_reference == "peak" and self.peak_equity is not None) else self.initial_capital
         if self.daily_pnl < 0 and abs(self.daily_pnl) / loss_ref >= self.daily_limit_pct:
             return self._halt(f"Daily loss limit: ${self.daily_pnl:.0f} ({abs(self.daily_pnl)/loss_ref*100:.1f}% of {self.loss_reference})")
 

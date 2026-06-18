@@ -188,6 +188,12 @@ class TradingBot:
         self.latest_features = {}
         self.scheduler_thread = None
 
+        # Priming tracking (set here for safety; filled in start())
+        self._priming_success: dict[str, bool] = {}
+        self._priming_attempted = False
+        self._priming_warned_for: set[str] = set()
+        self._priming_empty_count: dict[str, int] = {}
+
     @property
     def ws_client(self):
         """Backward compatibility for ws_client."""
@@ -668,9 +674,8 @@ class TradingBot:
         for strategy in state["strategies"].values():
             strategy.on_position_closed()
 
-        # Sync with compatibility dict
+        # Sync with compatibility dict (only symbol-prefixed key)
         self.open_positions.pop(f"{symbol}:{side}", None)
-        self.open_positions.pop(side, None)
         
         entry_price = pos["entry_price"]
         size = pos["size"]
@@ -726,7 +731,19 @@ class TradingBot:
             size = actual_filled
 
         self.balance += pnl
-        self.equity = self.balance
+        # Recalculate equity including unrealized PnL from ALL open positions
+        total_unrealized = 0.0
+        for sym, sym_state in self.symbol_states.items():
+            for s, p in sym_state["open_positions"].items():
+                try:
+                    sym_close = sym_state.get("latest_features", {}).get("close") or p["entry_price"]
+                except Exception:
+                    sym_close = p["entry_price"]
+                if s == "long":
+                    total_unrealized += p["size"] * (sym_close - p["entry_price"])
+                else:
+                    total_unrealized += p["size"] * (p["entry_price"] - sym_close)
+        self.equity = self.balance + total_unrealized
         self.recent_trades_pnl.append(pnl)
         if len(self.recent_trades_pnl) > 50:
             self.recent_trades_pnl = self.recent_trades_pnl[-50:]
@@ -818,10 +835,9 @@ class TradingBot:
             "theoretical_entry_price": close,
         }
         state["open_positions"][side] = pos_data
-        
-        # Sync with compatibility dict
+
+        # Sync with compatibility dict (always use symbol-prefixed key to avoid cross-symbol overwrites)
         self.open_positions[f"{symbol}:{side}"] = pos_data
-        self.open_positions[side] = pos_data
         
         # Initialize position tracker matching the backtester exit chain
         state["position_tracker"].enter(

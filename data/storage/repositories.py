@@ -142,7 +142,27 @@ class DatabaseManager:
                     # --- candles_1m: add 'symbol' column if missing ---
                     cursor = conn.exec_driver_sql("PRAGMA table_info(candles_1m)")
                     candle_columns = [row[1] for row in cursor.fetchall()]
-                    if candle_columns and "symbol" not in candle_columns:
+                    # Check for orphaned old table from a previous interrupted migration
+                    cursor_old = conn.exec_driver_sql(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name='candles_1m_old'"
+                    )
+                    has_orphaned = cursor_old.fetchone() is not None
+
+                    if has_orphaned:
+                        logger.warning("SQLite: found orphaned candles_1m_old table from previous migration — recovering...")
+                        if not candle_columns:
+                            # Table was renamed but new table wasn't created — recover
+                            Base.metadata.create_all(self.engine, tables=[Base.metadata.tables["candles_1m"]])
+                            conn.exec_driver_sql(
+                                "INSERT INTO candles_1m (symbol, timestamp, open, high, low, close, volume) "
+                                "SELECT 'BTC/USDT:USDT', timestamp, open, high, low, close, volume FROM candles_1m_old"
+                            )
+                        # Drop the old table regardless
+                        conn.exec_driver_sql("DROP TABLE candles_1m_old")
+                        logger.info("SQLite: orphaned candles_1m_old table dropped.")
+                        conn.commit()
+
+                    elif candle_columns and "symbol" not in candle_columns:
                         logger.info("SQLite: migrating candles_1m — adding 'symbol' column...")
                         conn.exec_driver_sql("ALTER TABLE candles_1m RENAME TO candles_1m_old")
                         conn.commit()
@@ -371,6 +391,7 @@ class CandleRepository:
     @staticmethod
     def _to_dict(candle: Candle) -> dict:
         return {
+            "symbol": candle.symbol,
             "timestamp": candle.timestamp,
             "open": candle.open,
             "high": candle.high,

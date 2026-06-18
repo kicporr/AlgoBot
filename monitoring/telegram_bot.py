@@ -85,7 +85,7 @@ class TelegramAlerter:
         """Build a one-line summary of dropped alerts and reset counters."""
         if self._dropped_count == 0:
             return ""
-        summary = f"📦 {self._dropped_count} alert(s) suppressed (rate limit)"
+        summary = f"[TG] {self._dropped_count} alert(s) suppressed (rate limit)"
         if self._dropped_types:
             detail = ", ".join(f"{k}:{v}" for k, v in sorted(self._dropped_types.items()))
             summary += f" [{detail}]"

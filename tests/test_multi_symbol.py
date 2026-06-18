@@ -235,9 +235,8 @@ def test_execute_and_close_position(mock_dependencies, base_config_yaml):
         assert state["open_positions"]["long"]["size"] == 2.0
         assert state["open_positions"]["long"]["entry_price"] > 3000.0  # including slippage
         
-        # Verify compatibility dict syncing
+        # Verify compatibility dict syncing (symbol-prefixed key only)
         assert f"{symbol}:long" in bot.open_positions
-        assert "long" in bot.open_positions
         
         # Verify tracker enter and SL/TP overrides
         tracker = state["position_tracker"]

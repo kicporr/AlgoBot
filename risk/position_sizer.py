@@ -111,8 +111,15 @@ class KellyPositionSizer:
             # Kelly fraction
             if avg_loss <= 0:
                 avg_loss = 0.001  # Floor to prevent division by zero
+            if avg_win <= 0:
+                avg_win = 0.001  # Floor to prevent division by zero and negative b_ratio
 
             b_ratio = avg_win / avg_loss
+            if b_ratio <= 0:
+                self.last_size = 0.0
+                self._last_reject = f"b_ratio≤0: avg_win={avg_win:.4f} avg_loss={avg_loss:.4f}"
+                return 0.0
+
             kelly_f = max(0.0, (win_rate * b_ratio - (1.0 - win_rate)) / b_ratio)
             kelly_f = min(kelly_f, self.max_kelly_pct)
 
@@ -144,6 +151,7 @@ class KellyPositionSizer:
             btc_size = 0.0
 
         self.last_size = btc_size
+        self._last_reject = ""  # Clear reject on success
 
         logger.debug(
             f"Position sizing ({self.method}): pct={self.last_kelly_pct:.4f} | "
