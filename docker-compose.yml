@@ -18,6 +18,6 @@ services:
       - ./logs:/app/logs
       - ./config:/app/config:ro
     ports:
-      - "8080:8080"   # Dashboard
+      - "8088:8088"   # Dashboard
     # Default: paper trading. Uncomment for live:
     # command: python orchestrator.py --mode live
