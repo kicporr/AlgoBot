@@ -13,7 +13,6 @@ numba>=0.59.0
 
 # --- Technical Analysis ---
 ta-lib>=0.4.28
-pandas-ta>=0.3.14b
 
 # --- Machine Learning (inference only) ---
 scikit-learn>=1.5.0
