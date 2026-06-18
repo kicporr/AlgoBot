@@ -38,6 +38,7 @@ class Trade(Base):
     features_json = Column(Text, nullable=True)
     theoretical_entry_price = Column(Float, nullable=True)
     theoretical_exit_price = Column(Float, nullable=True)
+    pipeline = Column(Text, nullable=True, default="pure")
 
 
 class Signal(Base):
@@ -53,6 +54,7 @@ class Signal(Base):
     executed = Column(Boolean, default=False)
     reject_reason = Column(Text, nullable=True)
     features_json = Column(Text, nullable=True)
+    pipeline = Column(Text, nullable=True, default="pure")
 
 
 class PerformanceSnapshot(Base):

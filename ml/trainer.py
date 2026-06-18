@@ -73,19 +73,21 @@ class WalkForwardTrainer:
         mask = future_close.notna()
         return y, mask
 
-    def train(self, X: pd.DataFrame, y: pd.Series) -> xgb.XGBClassifier:
+    def train(self, X: pd.DataFrame, y: pd.Series,
+              X_val: pd.DataFrame = None, y_val: pd.Series = None) -> xgb.XGBClassifier:
         """Train an XGBoost classifier on features X and target y.
 
         Args:
             X: Feature DataFrame (n_samples, n_features). Must be finite.
             y: Target Series (0 or 1). Must be finite.
+            X_val: Optional validation features for early stopping.
+            y_val: Optional validation target for early stopping.
 
         Returns:
-            Trained XGBoost model.
+            Trained XGBoost model, or None if insufficient data.
         """
         # Ensure clean data
         X_clean = X.copy()
-        # Replace inf/nan with 0 (shouldn't happen, but safety)
         X_clean = X_clean.replace([np.inf, -np.inf], np.nan).fillna(0)
 
         if len(X_clean) < 100:
@@ -93,7 +95,12 @@ class WalkForwardTrainer:
             return None
 
         model = xgb.XGBClassifier(**self.model_params)
-        model.fit(X_clean, y)
+        fit_kwargs = {}
+        if X_val is not None and y_val is not None:
+            X_val_clean = X_val.replace([np.inf, -np.inf], np.nan).fillna(0)
+            fit_kwargs["eval_set"] = [(X_val_clean, y_val)]
+            fit_kwargs["verbose"] = False
+        model.fit(X_clean, y, **fit_kwargs)
 
         self.last_model = model
 

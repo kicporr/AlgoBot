@@ -198,11 +198,11 @@ class BitgetRESTClient:
 
     # ─── Convenience Methods ────────────────────────────────────
 
-    def fetch_recent(self, timeframe: str = "1m", hours: int = 24) -> list[dict]:
+    def fetch_recent(self, timeframe: str = "1m", hours: int = 24, symbol: str = None) -> list[dict]:
         """Fetch recent N hours of candle data."""
         now_ms = int(time.time() * 1000)
         start_ms = now_ms - (hours * 3_600_000)
-        return self.fetch_ohlcv_range(timeframe=timeframe, start_ms=start_ms, end_ms=now_ms)
+        return self.fetch_ohlcv_range(symbol=symbol, timeframe=timeframe, start_ms=start_ms, end_ms=now_ms)
 
     def fetch_days(self, timeframe: str = "1h", days: int = 30, symbol: Optional[str] = None) -> pd.DataFrame:
         """Fetch N days as DataFrame."""

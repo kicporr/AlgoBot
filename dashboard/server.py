@@ -47,30 +47,42 @@ class DashboardHandler(BaseHTTPRequestHandler):
             relative_path = self.path.lstrip('/')
             content_type = self._get_mime_type(self.path)
             self._serve_static_file(relative_path, content_type)
-        elif self.path == '/api/status':
-            self._send_json(self._get_status())
-        elif self.path == '/api/trades':
-            self._send_json(self._get_trades())
-        elif self.path == '/api/signals':
-            self._send_json(self._get_signals())
-        elif self.path == '/api/logs':
+        elif self.path.startswith('/api/status'):
+            qs = self._parse_qs()
+            pipeline = qs.get('pipeline', 'pure')
+            self._send_json(self._get_status(pipeline))
+        elif self.path == '/api/compare':
+            self._send_json(self._get_compare())
+        elif self.path.startswith('/api/trades/all'):
+            qs = self._parse_qs()
+            self._send_json(self._get_all_trades_from_db(qs.get('pipeline', None)))
+        elif self.path.startswith('/api/trades'):
+            qs = self._parse_qs()
+            self._send_json(self._get_trades(qs.get('pipeline', None)))
+        elif self.path.startswith('/api/signals'):
+            qs = self._parse_qs()
+            self._send_json(self._get_signals(qs.get('pipeline', None)))
+        elif self.path.startswith('/api/logs'):
             self._send_json(self._get_logs())
-        elif self.path == '/api/analytics':
-            self._send_json(self._get_analytics())
-        elif self.path == '/api/export/csv':
+        elif self.path.startswith('/api/analytics'):
+            qs = self._parse_qs()
+            self._send_json(self._get_analytics(qs.get('pipeline', None)))
+        elif self.path.startswith('/api/export/csv'):
             self._export_csv()
-        elif self.path == '/api/export/json':
+        elif self.path.startswith('/api/export/json'):
             self._export_json()
         elif self.path.startswith('/api/candles'):
             self._get_candles()
-        elif self.path == '/api/trades/all':
+        elif self.path.startswith('/api/trades/all'):
             self._send_json(self._get_all_trades())
-        elif self.path == '/api/risk/snapshot':
+        elif self.path.startswith('/api/risk/snapshot'):
             self._send_json(self._get_risk_snapshot())
-        elif self.path == '/api/orders':
-            self._send_json(self._get_orders())
-        elif self.path == '/api/events':
-            self._send_json(self._get_events())
+        elif self.path.startswith('/api/orders'):
+            qs = self._parse_qs()
+            self._send_json(self._get_orders(qs.get('pipeline', None)))
+        elif self.path.startswith('/api/events'):
+            qs = self._parse_qs()
+            self._send_json(self._get_events(qs.get('pipeline', None)))
         else:
             self.send_error(404, 'File Not Found')
 
@@ -135,14 +147,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
             logger.error(f"Error serialization JSON: {e}")
             self.send_error(500, "Internal Server Error")
 
-    def _get_status(self):
+    def _get_status(self, pipeline_name: str = "pure"):
         if not self.bot:
             return {"error": "Bot not initialized"}
 
-        # Get active positions (across all symbols)
+        pipeline = self.bot.pipelines.get(pipeline_name, self.bot.pipelines["pure"])
+
+        # Get active positions (across all symbols for this pipeline)
         active_positions = []
         for symbol in self.bot.symbols:
-            sym_state = self.bot.symbol_states.get(symbol, {})
+            sym_state = pipeline.symbol_states.get(symbol, {})
             open_pos = sym_state.get("open_positions", {})
             for side, pos_data in open_pos.items():
                 active_positions.append({
@@ -157,28 +171,28 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         active_pos = active_positions[0] if active_positions else None
 
-        # Calculate estimated win rate and stats
+        # Calculate estimated win rate and stats (pipeline-specific)
         total_trades = 0
         win_rate = 0.0
         max_dd = 0.0
-        if hasattr(self.bot, 'risk_monitor'):
-            snap = self.bot.risk_monitor.snapshot()
+        if hasattr(pipeline, 'risk_monitor') and pipeline.risk_monitor:
+            snap = pipeline.risk_monitor.snapshot()
             total_trades = snap.get('trade_count', 0)
             win_rate = snap.get('win_rate', 0.0)
             max_dd = snap.get('current_drawdown_pct', 0.0)
 
-        # Get circuit breaker details
+        # Get circuit breaker details (pipeline-specific)
         cb_state = "NORMAL"
         cb_reason = ""
         cb_manual = False
-        if hasattr(self.bot, 'circuit_breaker'):
-            cb_state = self.bot.circuit_breaker.state.name if hasattr(self.bot.circuit_breaker.state, 'name') else str(self.bot.circuit_breaker.state)
-            cb_reason = getattr(self.bot.circuit_breaker, "halt_reason", "") or ""
-            cb_manual = getattr(self.bot.circuit_breaker, "manual_halted", False)
+        if hasattr(pipeline, 'circuit_breaker') and pipeline.circuit_breaker:
+            cb_state = pipeline.circuit_breaker.state.name if hasattr(pipeline.circuit_breaker.state, 'name') else str(pipeline.circuit_breaker.state)
+            cb_reason = getattr(pipeline.circuit_breaker, "halt_reason", "") or ""
+            cb_manual = getattr(pipeline.circuit_breaker, "manual_halted", False)
 
         # Get real-time price & 24h change for all symbols
         tickers = {}
-        for symbol in self.bot.symbols:
+        for symbol in pipeline.symbols:
             ws = self.bot.ws_clients.get(symbol)
             last_price = 0.0
             price_24h = 0.0
@@ -218,7 +232,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         proximity = {}
         regimes = {}
         for symbol in self.bot.symbols:
-            sym_state = self.bot.symbol_states.get(symbol)
+            sym_state = pipeline.symbol_states.get(symbol)
             if not sym_state:
                 continue
 
@@ -271,16 +285,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
         compat_regime = regimes.get(first_symbol, {})
 
         return {
+            "pipeline": pipeline_name,
             "bot_name": self.bot.config.get("bot", {}).get("name", "bocik"),
             "version": self.bot.config.get("bot", {}).get("version", "0.1.0"),
             "mode": self.bot.config.get("bot", {}).get("mode", "paper").upper(),
             "running": self.bot.running,
             "exchange": self.bot.config.get("exchange", {}).get("name", "bitget"),
             "ws_inst_type": self.bot.config.get("exchange", {}).get("ws_inst_type", "USDT-FUTURES"),
-            "ping": 42, # Mock latency
-            "equity": self.bot.equity,
-            "balance": self.bot.balance,
-            "initial_capital": self.bot.initial_capital,
+            "ping": 42,
+            "equity": self._calc_equity_from_db(pipeline),
+            "balance": self._calc_balance_from_db(pipeline),
+            "initial_capital": pipeline.initial_capital,
+            "meta_labeler_enabled": pipeline.meta_labeler is not None,
             "active_position": active_pos,
             "active_positions": active_positions,
             "btc_price": last_price,
@@ -292,9 +308,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 "manual_halted": cb_manual,
             },
             "stats": {
-                "total_trades": total_trades,
-                "win_rate": win_rate,
-                "max_drawdown": max_dd,
+                "total_trades": self._count_trades_db(pipeline),
+                "win_rate": self._win_rate_db(pipeline),
+                "max_drawdown": 0,
             },
             "proximity": compat_proximity,
             "proximities": proximity,
@@ -311,17 +327,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
             }
         }
 
-    def _get_trades(self):
+    def _get_trades(self, pipeline: str = None):
         import sqlite3
         db_path = self.bot.config.get("data", {}).get("database", {}).get("path", "./data/trading.db")
         if not os.path.exists(db_path):
             return []
-        
+
         try:
             conn = sqlite3.connect(db_path)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            cursor.execute("SELECT entry_time, exit_time, side, entry_price, exit_price, quantity, pnl, pnl_pct, strategy, exit_reason, theoretical_entry_price, theoretical_exit_price FROM trades ORDER BY exit_time DESC LIMIT 50")
+            if pipeline:
+                cursor.execute("SELECT entry_time, exit_time, side, entry_price, exit_price, quantity, pnl, pnl_pct, strategy, exit_reason, theoretical_entry_price, theoretical_exit_price, pipeline FROM trades WHERE pipeline=? ORDER BY exit_time DESC LIMIT 50", (pipeline,))
+            else:
+                cursor.execute("SELECT entry_time, exit_time, side, entry_price, exit_price, quantity, pnl, pnl_pct, strategy, exit_reason, theoretical_entry_price, theoretical_exit_price, pipeline FROM trades ORDER BY exit_time DESC LIMIT 50")
             rows = cursor.fetchall()
             trades = [dict(row) for row in rows]
             conn.close()
@@ -330,17 +349,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
             logger.error(f"Error querying trades database: {e}")
             return []
 
-    def _get_signals(self):
+    def _get_signals(self, pipeline: str = None):
         import sqlite3
         db_path = self.bot.config.get("data", {}).get("database", {}).get("path", "./data/trading.db")
         if not os.path.exists(db_path):
             return []
-        
+
         try:
             conn = sqlite3.connect(db_path)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            cursor.execute("SELECT id, timestamp, strategy, signal, confidence, regime, executed, reject_reason FROM signals ORDER BY timestamp DESC LIMIT 50")
+            if pipeline:
+                cursor.execute("SELECT id, timestamp, strategy, signal, confidence, regime, executed, reject_reason, pipeline FROM signals WHERE pipeline=? ORDER BY timestamp DESC LIMIT 50", (pipeline,))
+            else:
+                cursor.execute("SELECT id, timestamp, strategy, signal, confidence, regime, executed, reject_reason, pipeline FROM signals ORDER BY timestamp DESC LIMIT 50")
             rows = cursor.fetchall()
             signals = [dict(row) for row in rows]
             conn.close()
@@ -398,17 +420,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
             logger.error(f"Error reading logs file: {e}")
             return [{"timestamp": "", "level": "ERROR", "message": f"Failed to read logs: {e}"}]
 
-    def _get_all_trades_from_db(self):
+    def _get_all_trades_from_db(self, pipeline: str = None):
         import sqlite3
         db_path = self.bot.config.get("data", {}).get("database", {}).get("path", "./data/trading.db")
         if not os.path.exists(db_path):
             return []
-        
+
         try:
             conn = sqlite3.connect(db_path)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            cursor.execute("SELECT id, entry_time, exit_time, side, entry_price, exit_price, quantity, pnl, pnl_pct, strategy, regime, exit_reason, theoretical_entry_price, theoretical_exit_price FROM trades ORDER BY exit_time ASC")
+            if pipeline:
+                cursor.execute("SELECT id, entry_time, exit_time, side, entry_price, exit_price, quantity, pnl, pnl_pct, strategy, regime, exit_reason, theoretical_entry_price, theoretical_exit_price, pipeline FROM trades WHERE pipeline=? ORDER BY exit_time ASC", (pipeline,))
+            else:
+                cursor.execute("SELECT id, entry_time, exit_time, side, entry_price, exit_price, quantity, pnl, pnl_pct, strategy, regime, exit_reason, theoretical_entry_price, theoretical_exit_price, pipeline FROM trades ORDER BY exit_time ASC")
             rows = cursor.fetchall()
             trades = [dict(row) for row in rows]
             conn.close()
@@ -417,7 +442,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             logger.error(f"Error querying trades database: {e}")
             return []
 
-    def _get_analytics(self):
+    def _get_analytics(self, pipeline: str = None):
         import math
         import numpy as np
         try:
@@ -425,15 +450,23 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except ImportError as e:
             logger.error(f"Failed to import calculate_metrics: {e}")
             return {"error": "Failed to import metrics engine"}
-            
-        trades = self._get_all_trades_from_db()
+
+        trades = self._get_all_trades_from_db(pipeline)
         closed_trades = [t for t in trades if t.get("exit_time") is not None]
-        
+
         initial_capital = 10000.0
         if self.bot and hasattr(self.bot, 'initial_capital'):
             initial_capital = self.bot.initial_capital
-            
+
         metrics = calculate_metrics(closed_trades, initial_capital=initial_capital)
+        # Replace infinity strings/numbers with large sentinel (JSON-safe)
+        import math
+        for k in list(metrics.keys()):
+            v = metrics[k]
+            if isinstance(v, str) and v == 'inf':
+                metrics[k] = 999.0
+            elif isinstance(v, float) and math.isinf(v):
+                metrics[k] = 999.0 if v > 0 else -999.0
         
         max_dd_pct = metrics.get("max_drawdown_pct", 0.0)
         total_pnl = metrics.get("total_pnl", 0.0)
@@ -476,8 +509,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         def clean_val(v):
             if isinstance(v, float):
-                if math.isinf(v) or math.isnan(v):
-                    return "inf" if v > 0 else ("-inf" if v < 0 else "nan")
+                if math.isinf(v):
+                    return 999.0 if v > 0 else -999.0
+                if math.isnan(v):
+                    return 0.0
             return v
 
         def get_symbol_from_trade(t):
@@ -762,6 +797,116 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     # ── NEW ENDPOINTS ─────────────────────────────────────────────
 
+    def _get_compare(self):
+        """GET /api/compare — side-by-side pipeline comparison."""
+        if not self.bot:
+            return {"error": "Bot not initialized"}
+
+        def pipe_summary(p):
+            active = 0
+            unrealized = 0.0
+            for sym, state in p.symbol_states.items():
+                for side, pos in state.get("open_positions", {}).items():
+                    active += 1
+                    try:
+                        close_p = state.get("latest_features", {}).get("close") or pos["entry_price"]
+                    except Exception:
+                        close_p = pos["entry_price"]
+                    if side == "long":
+                        unrealized += pos["size"] * (close_p - pos["entry_price"])
+                    else:
+                        unrealized += pos["size"] * (pos["entry_price"] - close_p)
+
+            # Read trade stats from DB
+            trade_count, win_rate = 0, 0.0
+            try:
+                import sqlite3
+                db_path = self.bot.config.get("data", {}).get("database", {}).get("path", "./data/trading.db")
+                if os.path.exists(db_path):
+                    c = sqlite3.connect(db_path)
+                    c.row_factory = sqlite3.Row
+                    rows = c.execute("SELECT pnl FROM trades WHERE pipeline=? AND exit_time IS NOT NULL", (p.name,)).fetchall()
+                    if rows:
+                        trade_count = len(rows)
+                        wins = sum(1 for r in rows if r["pnl"] > 0)
+                        win_rate = round(wins / trade_count * 100, 1) if trade_count > 0 else 0
+                    c.close()
+            except Exception:
+                pass
+
+            cb_info = {"state": "NORMAL"}
+            if p.circuit_breaker:
+                try: cb_info = p.circuit_breaker.get_snapshot()
+                except Exception: pass
+
+            balance_db = self._calc_balance_from_db(p)
+            equity_db = self._calc_equity_from_db(p)
+
+            return {
+                "name": p.name,
+                "balance": round(balance_db, 2),
+                "equity": round(equity_db, 2),
+                "initial_capital": round(p.initial_capital, 2),
+                "return_pct": round((equity_db - p.initial_capital) / p.initial_capital * 100, 2) if p.initial_capital > 0 else 0,
+                "active_positions": active,
+                "unrealized_pnl": round(unrealized, 2),
+                "trade_count": trade_count,
+                "win_rate": win_rate,
+                "drawdown_pct": 0,
+                "circuit_breaker": cb_info.get("state", "NORMAL"),
+                "meta_labeler_enabled": p.meta_labeler is not None,
+                "meta_labeler_trained": p.meta_labeler.is_ready() if p.meta_labeler else False,
+            }
+
+        return {
+            "pure": pipe_summary(self.bot.pipelines["pure"]),
+            "ml": pipe_summary(self.bot.pipelines["ml"]),
+        }
+
+    def _count_trades_db(self, pipeline) -> int:
+        try:
+            import sqlite3
+            db_path = self.bot.config.get("data", {}).get("database", {}).get("path", "./data/trading.db")
+            if not os.path.exists(db_path): return 0
+            c = sqlite3.connect(db_path)
+            n = c.execute("SELECT COUNT(*) FROM trades WHERE pipeline=?", (pipeline.name,)).fetchone()[0]
+            c.close()
+            return n
+        except Exception: return 0
+
+    def _win_rate_db(self, pipeline) -> float:
+        try:
+            import sqlite3
+            db_path = self.bot.config.get("data", {}).get("database", {}).get("path", "./data/trading.db")
+            if not os.path.exists(db_path): return 0.0
+            c = sqlite3.connect(db_path)
+            total = c.execute("SELECT COUNT(*) FROM trades WHERE pipeline=?", (pipeline.name,)).fetchone()[0]
+            wins = c.execute("SELECT COUNT(*) FROM trades WHERE pipeline=? AND pnl > 0", (pipeline.name,)).fetchone()[0]
+            c.close()
+            return round(wins / total * 100, 1) if total > 0 else 0.0
+        except Exception: return 0.0
+
+    def _calc_balance_from_db(self, pipeline) -> float:
+        """Calculate realized balance from DB trades for a pipeline."""
+        import sqlite3
+        try:
+            db_path = self.bot.config.get("data", {}).get("database", {}).get("path", "./data/trading.db")
+            if not os.path.exists(db_path):
+                return pipeline.initial_capital
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT COALESCE(SUM(pnl), 0) FROM trades WHERE pipeline=?", (pipeline.name,))
+            total_pnl = cursor.fetchone()[0]
+            conn.close()
+            return pipeline.initial_capital + total_pnl
+        except Exception:
+            return pipeline.initial_capital
+
+    def _calc_equity_from_db(self, pipeline) -> float:
+        """Calculate equity = DB balance + current unrealized PnL."""
+        balance = self._calc_balance_from_db(pipeline)
+        return balance + pipeline.total_unrealized_pnl()
+
     def _parse_qs(self):
         """Parse query string from self.path into a dict."""
         qs = {}
@@ -897,10 +1042,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         return data
 
-    def _get_orders(self):
-        """GET /api/orders — list open/pending orders from exchange, or paper positions as fallback."""
+    def _get_orders(self, pipeline: str = None):
+        """GET /api/orders — list open/pending orders for a specific pipeline."""
         if not self.bot:
             return {"orders": [], "error": "Bot not initialized"}
+        p = self.bot.pipelines.get(pipeline, self.bot.pipelines["pure"]) if pipeline else self.bot._active()
         orders = []
         try:
             if hasattr(self.bot, 'exchange') and self.bot.exchange and not self.bot.paper_trading:
@@ -922,9 +1068,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                             })
                     except Exception:
                         pass
-            # Fallback: show paper positions as "pending orders" for visibility in UI
+            # Fallback: show paper positions as "pending orders" for visibility in UI (pipeline-specific)
             if not orders:
-                for sym, state in self.bot.symbol_states.items():
+                states = p.symbol_states if pipeline else self.bot.symbol_states
+                for sym, state in states.items():
                     open_pos = state.get("open_positions", {})
                     for side, pos in open_pos.items():
                         orders.append({
@@ -943,8 +1090,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return {"orders": [], "error": str(e)}
         return {"orders": orders}
 
-    def _get_events(self):
-        """GET /api/events — recent trading events (signals, trades, breaker trips)."""
+    def _get_events(self, pipeline: str = None):
+        """GET /api/events — recent trading events for a specific pipeline."""
         import sqlite3, time
         events = []
         try:
@@ -962,12 +1109,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             conn = sqlite3.connect(db_path)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            logger.info(f"Events: opened DB at {db_path}")
-
-            # Recent trades (closed positions)
-            cursor.execute("SELECT exit_time, side, pnl, pnl_pct, strategy, exit_reason FROM trades WHERE exit_time IS NOT NULL ORDER BY exit_time DESC LIMIT 30")
+            # Recent trades (closed positions) - filter by pipeline
+            if pipeline:
+                cursor.execute("SELECT exit_time, side, pnl, pnl_pct, strategy, exit_reason FROM trades WHERE exit_time IS NOT NULL AND pipeline=? ORDER BY exit_time DESC LIMIT 30", (pipeline,))
+            else:
+                cursor.execute("SELECT exit_time, side, pnl, pnl_pct, strategy, exit_reason FROM trades WHERE exit_time IS NOT NULL ORDER BY exit_time DESC LIMIT 30")
             trade_rows = cursor.fetchall()
-            logger.info(f"Events: found {len(trade_rows)} trades")
             for r in trade_rows:
                 sym = (r["strategy"] or "").split(":")[1] if ":" in (r["strategy"] or "") else ""
                 events.append({
@@ -979,10 +1126,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     "pnl": r["pnl"] or 0
                 })
 
-            # Recent signals
-            cursor.execute("SELECT timestamp, strategy, signal, confidence, executed, reject_reason FROM signals ORDER BY timestamp DESC LIMIT 20")
+            # Recent signals - filter by pipeline
+            if pipeline:
+                cursor.execute("SELECT timestamp, strategy, signal, confidence, executed, reject_reason FROM signals WHERE pipeline=? ORDER BY timestamp DESC LIMIT 20", (pipeline,))
+            else:
+                cursor.execute("SELECT timestamp, strategy, signal, confidence, executed, reject_reason FROM signals ORDER BY timestamp DESC LIMIT 20")
             sig_rows = cursor.fetchall()
-            logger.info(f"Events: found {len(sig_rows)} signals")
             for r in sig_rows:
                 sym = (r["strategy"] or "").split(":")[1] if ":" in (r["strategy"] or "") else ""
                 executed = r["executed"]

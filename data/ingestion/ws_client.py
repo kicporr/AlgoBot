@@ -246,6 +246,8 @@ class BitgetWSClient:
             if not channel.startswith("candle"):
                 return
 
+            inst_id = arg.get("instId", "?")
+
             # Skip snapshots (initial state) — process, but don't emit as new candles
             is_snapshot = data.get("action") == "snapshot"
 
@@ -270,7 +272,15 @@ class BitgetWSClient:
                     "volume": float(row[5]),  # Base volume
                 }
 
-                self.last_price = candle["close"]
+                # Debug: log suspicious candles for diagnosis
+                if self.last_price > 0 and candle["close"] > 0:
+                    jump = abs(candle["close"] - self.last_price) / self.last_price
+                    if jump > 0.80:  # >80% price jump = investigate
+                        logger.warning(
+                            f"SUSPICIOUS WS candle: {channel} {inst_id} | "
+                            f"last_price={self.last_price:.2f} candle_close={candle['close']:.2f} "
+                            f"jump={jump:.1%} | Raw row: {row}"
+                        )
 
                 if is_snapshot:
                     # Feed into resampler silently — don't emit yet
@@ -338,6 +348,9 @@ class BitgetWSClient:
             logger.warning(f"Rejected candle ts={candle['timestamp']}: {result.reason}")
             return
 
+        # Only update last_price from VALIDATED candles (prevents corrupted data in tickers)
+        self.last_price = candle["close"]
+
         self._fire_callbacks("1m", candle)
         new_candles = self.resampler.add_1m_candle(candle)
 
@@ -377,7 +390,7 @@ class BitgetWSClient:
             return
         logger.info(f"Priming resampler with {hours}h of historical data...")
         try:
-            candles = self.rest_client.fetch_recent(timeframe="1m", hours=hours)
+            candles = self.rest_client.fetch_recent(timeframe="1m", hours=hours, symbol=self.symbol)
             if candles:
                 valid, rejected = self.validator.validate_batch(candles)
                 logger.info(f"Primed: {len(valid)} valid, {len(rejected)} rejected")
@@ -401,6 +414,7 @@ class BitgetWSClient:
                 logger.info("No missed candles to backfill (already up to date)")
                 return
             missed = self.rest_client.fetch_ohlcv_range(
+                symbol=self.symbol,
                 timeframe="1m",
                 start_ms=start_ms,
                 end_ms=now_ms,

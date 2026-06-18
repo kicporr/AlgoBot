@@ -1,30 +1,11 @@
+Trzy możliwe wyjaśnienia (od najbardziej do najmniej niepokojącego)
+Scenariusz 1 — Temporal leakage (najpoważniejszy). Model widzi podczas treningu cechy, które w czasie rzeczywistym nie byłyby jeszcze dostępne. Np. jeśli labelowanie używa forward-looking okna, a część tych świec trafia do zbioru treningowego — model uczy się "przyszłości". Sprawdź: czy purged K-Fold ma wystarczające embargo? Przy 1H danych i lookback 20-50 świec embargo powinno wynosić minimum 50 świec (nie 1%).
+Scenariusz 2 — Model overfit na małej próbie (prawdopodobny). 169 trade'ów to mało jak na XGBoost z 60+ featurami, nawet z regularyzacją. Model mógł zapamiętać specyficzne kombinacje cech z okresu treningowego. Konsystencja v1/v2/v3 jest obiecująca, ale jeśli wszystkie trzy trenowały na nakładających się danych — to nie jest niezależna walidacja.
+Scenariusz 3 — Model rzeczywiście działa, ale wyniki są zawyżone przez małą próbę. 169 trade'ów przy WR 68% — przedział ufności dla WR to ±7pp (95% CI). Czyli prawdziwy WR to prawdopodobnie 61-75%. Sharpe 5.65 z 169 trade'ów ma ogromną wariancję estymacji — na żywych danych spodziewaj się 2.5-3.5 w bull rynku.
 
+Konkretne testy zanim wejdziesz na produkcjęZamiast opierać się na interpretacji deflation testu, zrób te trzy rzeczy:Test 1 — Walk-forward na nowych danych (najważniejszy). Weź ostatnie 3 miesiące danych, których model nigdy nie widział. Puść model bez retrenowania. Jeśli WR spada do 52-58% — masz overfit. Jeśli utrzymuje 60%+ — model ma realny edge.Test 2 — Sprawdź rozkład odrzuconych sygnałów. Model odrzucił 212 trade'ów. Jaki był ich WR i PnL? Jeśli odrzucone miały WR 30% — model świetnie filtruje. Jeśli odrzucone miały WR 43% (jak baseline) — model filtruje losowo i wyniki są artefaktem małej próby.
+Jeśli WR odrzuconych ≈ WR baseline (43%) → model nie discriminuje, filtruje losowo → overfit.
 
-## Konkretne kroki
-
-### 1. Przetestuj na okresie bear market (2022)
-
-Przesuń OOS window na `2022-01 → 2022-12` (crypto winter). BTC: $47k → $16k. Uruchom:
-- Swój bot z tymi samymi parametrami
-- Random baseline na tym samym okresie
-
-Jeśli Twój bot ma Sharpe >0 a random <0 — to jest **dowód że reżim filter działa**. To ważniejsze niż Sharpe 2.45 w bull market.
-
-### 2. Powiększ próbkę — dodaj 3 pozostałe symbole
-
-2 symbole to za mało do wniosków statystycznych. Z BTC+ETH masz 1,094 trades. Z 5 symbolami będziesz miał ~2,500. To zmniejszy błąd standardowy i może przesunąć p-value poniżej 0.05.
-
-### 3. Zastanów się nad "honest Sharpe"
-
-W dokumentacji projektu zamiast "Sharpe 2.84" (stary, fałszywy) powinieneś napisać:
-
-> **Realistyczny OOS Sharpe**: 2.45 (BTC+ETH, 2023-2026)
-> **Random baseline**: 1.93 (średnia 1000 losowych strategii)
-> **Estymowany edge**: +0.5 Sharpe'a powyżej baseline
-> **Istotność statystyczna**: p ≈ 0.17 (nieistotne przy α=0.05, potrzebna większa próba)
-
-To jest uczciwe. Inwestor, który widzi to, wie na czym stoi. Inwestor, który widzi "Sharpe 2.84" — zostaje wprowadzony w błąd.
-
----
-
-
+Jeśli WR odrzuconych < 35% → model rzeczywiście odsiewa złe sygnały → edge jest realny.
+Test 3 — Confidence calibration check. Przy threshold 0.50 model przyjmuje 169/381 = 44% sygnałów. Sprawdź histogram confidence scores: Jeśli rozkład jest bimodalny (dużo wartości blisko 0 i blisko 1) — model jest pewny swoich predykcji, to dobry znak. Jeśli skupiony wokół 0.5 z długim ogonem — model jest niepewny, high confidence score to artefakt.
+Konsystencja v1/v2/v3 jest najlepszym argumentem za tym że model ma edge, ale Sharpe 5.65 i WR 68% są prawie na pewno zawyżone przez małą próbę i potencjalny overfit — prawdziwa wartość modelu ujawni się dopiero w walk-forward OOS na danych po dacie treningu.

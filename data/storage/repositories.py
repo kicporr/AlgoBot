@@ -186,6 +186,16 @@ class DatabaseManager:
                     if "theoretical_exit_price" not in columns:
                         conn.exec_driver_sql("ALTER TABLE trades ADD COLUMN theoretical_exit_price FLOAT")
                         logger.info("Migrated SQLite: added 'theoretical_exit_price' column to 'trades' table")
+                    if "pipeline" not in columns:
+                        conn.exec_driver_sql("ALTER TABLE trades ADD COLUMN pipeline TEXT DEFAULT 'pure'")
+                        logger.info("Migrated SQLite: added 'pipeline' column to 'trades' table")
+                    # --- signals: add pipeline column if missing ---
+                    cursor = conn.exec_driver_sql("PRAGMA table_info(signals)")
+                    sig_columns = [row[1] for row in cursor.fetchall()]
+                    if "pipeline" not in sig_columns:
+                        conn.exec_driver_sql("ALTER TABLE signals ADD COLUMN pipeline TEXT DEFAULT 'pure'")
+                        logger.info("Migrated SQLite: added 'pipeline' column to 'signals' table")
+                    conn.commit()
                 elif db_type == "postgresql":
                     cursor = conn.execute(text(
                         "SELECT column_name FROM information_schema.columns "
@@ -429,6 +439,7 @@ class TradeRepository:
                     features_json=trade.get("features_json"),
                     theoretical_entry_price=trade.get("theoretical_entry_price"),
                     theoretical_exit_price=trade.get("theoretical_exit_price"),
+                    pipeline=trade.get("pipeline", "pure"),
                 )
                 session.add(record)
                 session.flush()
@@ -500,6 +511,7 @@ class SignalRepository:
                     executed=signal.get("executed", False),
                     reject_reason=signal.get("reject_reason"),
                     features_json=signal.get("features_json"),
+                    pipeline=signal.get("pipeline", "pure"),
                 )
                 session.add(record)
         except Exception as e:

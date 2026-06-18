@@ -6,6 +6,12 @@ from .base import BaseStrategy, Signal
 from .mtf_macd import MTF_MACD_Elder
 from .mean_reversion import MeanReversion
 
+# XGBoost ML strategy (requires xgboost)
+try:
+    from .xgb_cost_aware import XGBoostCostAware
+except ImportError:
+    XGBoostCostAware = None
+
 # Meta-labeling (placeholder — not yet implemented)
 try:
     from .meta_labeling import MetaLabeler
@@ -16,5 +22,6 @@ except ImportError:
 __all__ = [
     "BaseStrategy", "Signal",
     "MTF_MACD_Elder", "MeanReversion",
+    "XGBoostCostAware",
     "MetaLabeler",
 ]

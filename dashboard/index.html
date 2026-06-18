@@ -80,6 +80,24 @@ body{overflow:hidden}
                 </p>
             </div>
         </div>
+        <!-- Pipeline Toggle -->
+        <div class="px-1 py-3 mb-2 bg-surface-container-low rounded-lg border border-outline-variant">
+            <p class="text-label-sm font-label-sm text-on-surface-variant mb-2 px-2">STRATEGIA</p>
+            <div class="flex rounded-md bg-surface-container-high p-0.5">
+                <button id="btn-pipeline-pure" onclick="switchPipeline('pure')"
+                    class="flex-1 py-1.5 text-label-sm font-label-sm rounded transition-colors bg-primary-container text-on-primary-container">
+                    MTF_MACD
+                </button>
+                <button id="btn-pipeline-ml" onclick="switchPipeline('ml')"
+                    class="flex-1 py-1.5 text-label-sm font-label-sm rounded transition-colors text-on-surface-variant hover:bg-surface-container">
+                    + MetaLabeler
+                </button>
+            </div>
+            <div id="pipeline-compare-mini" class="mt-2 px-2 text-[10px] font-data-mono text-on-surface-variant space-y-0.5 hidden">
+                <div class="flex justify-between"><span>Pure:</span><span id="cmp-pure">-</span></div>
+                <div class="flex justify-between"><span>ML:</span><span id="cmp-ml">-</span></div>
+            </div>
+        </div>
     </div>
     <nav class="flex-1 px-3 space-y-1" id="sidebar-nav">
         <button onclick="switchTab('overview')" id="nav-overview" class="w-full flex items-center gap-3 px-3 py-2 text-primary font-bold border-r-2 border-primary bg-surface-container translate-x-1 transition-transform rounded-sm">
@@ -125,6 +143,7 @@ body{overflow:hidden}
             <button id="status-badge" class="flex items-center gap-1.5 bg-secondary/10 border border-secondary/30 px-2.5 py-1 rounded-full text-[11px] font-label-sm text-secondary shrink-0">
                 <span class="w-1.5 h-1.5 rounded-full bg-secondary shadow-[0_0_4px_rgba(78,222,163,0.8)]"></span>Aktywny
             </button>
+            <span id="pipeline-label" class="text-[11px] font-label-sm text-primary-container bg-primary-container/10 px-2 py-0.5 rounded border border-primary-container/20 shrink-0">MTF_MACD</span>
             <span id="mode-badge" class="inline-block px-2 py-0.5 bg-primary/20 text-primary border border-primary/30 rounded text-[11px] font-label-sm font-bold tracking-wider shrink-0">PAPER</span>
             <div class="h-5 w-px bg-outline-variant/50 shrink-0"></div>
             <div id="header-tickers" class="flex items-center gap-4 overflow-x-auto no-scrollbar text-[12px] font-data-mono text-on-surface-variant flex-1 min-w-0"></div>
@@ -568,7 +587,7 @@ body{overflow:hidden}
 // ================================================================
 // Apex Ledger Dashboard — Application Logic (monolithic)
 // ================================================================
-const API_BASE="";let activeTab="overview",logsFilterLevel="ALL",logsSearchQuery="",fullLogsCache=[],configDataCache={};
+const API_BASE="";let activeTab="overview",logsFilterLevel="ALL",logsSearchQuery="",fullLogsCache=[],configDataCache={},currentPipeline="pure";
 window.chartData={equities:[],trades:[],minEq:1e4,maxEq:1e4,range:200,step:1};
 window._lastTickers=null;let sparklineCache={};
 let journalMonth=new Date().getMonth(),journalYear=new Date().getFullYear(),journalAllTrades=[],journalSelectedDay=null,riskSnapshotData=null;
@@ -606,17 +625,44 @@ function showToast(msg,type){
 
 // ── Data Fetching ─────────────────────────────────────────────
 async function fetchStatus(){
-    try{const r=await fetch(API_BASE+"/api/status");const data=await r.json();configDataCache=data.config||{};updateStatusUI(data)}
+    try{const r=await fetch(API_BASE+"/api/status?pipeline="+currentPipeline);const data=await r.json();configDataCache=data.config||{};updateStatusUI(data)}
     catch(e){console.error("fetchStatus:",e)}
 }
+function switchPipeline(name){
+    currentPipeline=name;
+    console.log('switchPipeline: '+name);
+    // Force immediate UI feedback
+    document.title = (name==='ml'?'[ML] ':'') + 'Apex Ledger - BTC Bot Trading Dashboard';
+    document.getElementById("btn-pipeline-pure").className=name==="pure"
+        ?"flex-1 py-1.5 text-label-sm font-label-sm rounded transition-colors bg-primary-container text-on-primary-container"
+        :"flex-1 py-1.5 text-label-sm font-label-sm rounded transition-colors text-on-surface-variant hover:bg-surface-container";
+    document.getElementById("btn-pipeline-ml").className=name==="ml"
+        ?"flex-1 py-1.5 text-label-sm font-label-sm rounded transition-colors bg-primary-container text-on-primary-container"
+        :"flex-1 py-1.5 text-label-sm font-label-sm rounded transition-colors text-on-surface-variant hover:bg-surface-container";
+    document.getElementById("pipeline-label").textContent=name==="ml"?"+ MetaLabeler":"MTF_MACD";
+    window.currentProxSymbol=null;  // Reset proxy symbol on pipeline switch
+    fetchStatus();fetchTrades();fetchCompare();fetchAnalytics();fetchOrders();fetchEvents();
+    if(activeTab==="journal")fetchJournalData();
+}
+async function fetchCompare(){
+    try{
+        const r=await fetch(API_BASE+"/api/compare");
+        const c=await r.json();
+        if(c.pure&&c.ml){
+            document.getElementById("cmp-pure").textContent="$"+c.pure.balance.toFixed(0)+" | "+c.pure.trade_count+"t | "+c.pure.win_rate.toFixed(0)+"%";
+            document.getElementById("cmp-ml").textContent="$"+c.ml.balance.toFixed(0)+" | "+c.ml.trade_count+"t | "+c.ml.win_rate.toFixed(0)+"%";
+            document.getElementById("pipeline-compare-mini").classList.remove("hidden");
+        }
+    }catch(e){}
+}
 async function fetchTrades(){
-    try{const r=await fetch(API_BASE+"/api/trades");updateTradesUI(await r.json())}catch(e){}
+    try{const r=await fetch(API_BASE+"/api/trades?pipeline="+currentPipeline);updateTradesUI(await r.json())}catch(e){}
 }
 async function fetchLogs(){
     try{const r=await fetch(API_BASE+"/api/logs");fullLogsCache=await r.json();renderLogs()}catch(e){}
 }
 async function fetchAnalytics(){
-    try{const r=await fetch(API_BASE+"/api/analytics");updateAnalyticsUI(await r.json())}catch(e){}
+    try{const r=await fetch(API_BASE+"/api/analytics?pipeline="+currentPipeline);const d=await r.json();updateAnalyticsUI(d);}catch(e){console.error('fetchAnalytics:',e);}
 }
 
 // ── Status UI ─────────────────────────────────────────────────
@@ -651,7 +697,9 @@ function updateStatusUI(data){
     }
 
     // Metrics
-    const eq=data.equity||0;const bal=data.balance||0;const init=data.initial_capital||10000;
+    if(!data||typeof data!=="object")return;
+    const eq=Number(data.equity)||0;const bal=Number(data.balance)||0;const init=Number(data.initial_capital)||10000;
+    if(isNaN(init)||init<=0)return;
     const pnl=eq-init;const pnlPct=init>0?(pnl/init)*100:0;
     const stats=data.stats||{};const dd=stats.max_drawdown||0;const wr=stats.win_rate||0;const tc=stats.total_trades||0;
     setText("metric-equity","$"+eq.toLocaleString("en-US",{minFractionDigits:2}));
@@ -742,7 +790,7 @@ function updateStatusUI(data){
         }
         // Checklist
         const cb_ok=(data.circuit_breaker||{}).state==="NORMAL"&&!(data.circuit_breaker||{}).manual_halted;
-        const regimeOk=(stats.regime||"").toLowerCase()==="trending";
+        const regimeOk=((data.regime||{}).regime||"").toLowerCase()==="trending";
         const d1Ok=pm?.d1_trend==="UP"||pm?.d1_trend==="DOWN";
         const volOk=pm?.volume_sma_ratio>=pm?.volume_mult;
         updateChecklist("checklist-cb",cb_ok,cb_ok?"BEZPIECZNIK OTWARTY":"ZABLOKOWANY");
@@ -788,8 +836,12 @@ function updateTradesUI(trades){
 // ── Equity Chart ───────────────────────────────────────────────
 function updateEquityChart(trades){
     const svg=document.getElementById("equity-svg");if(!svg)return;
-    const init=window.initialCapital||10000;let cur=init;const pts=[];const tradePts=[];
-    [...trades].reverse().forEach(t=>{cur+=(t.pnl||0);pts.push(cur);tradePts.push({equity:cur,trade:t,time:t.exit_time});});
+    const init=window.initialCapital||10000;
+    if(isNaN(init)||init<=0)return;
+    let cur=init;const pts=[];const tradePts=[];
+    if(trades&&trades.length){
+        [...trades].reverse().forEach(t=>{const p=t.pnl||0;if(!isNaN(p)){cur+=p;pts.push(cur);tradePts.push({equity:cur,trade:t,time:t.exit_time});}});
+    }
     if(!pts.length){pts.push(init);pts.push(init);}
     window.chartData.equities=[init,...pts];window.chartData.trades=trades;window.chartData.tradePts=tradePts;
 
@@ -800,8 +852,9 @@ function updateEquityChart(trades){
     const pw=W-ml-mr,ph=H-mt-mb;
     if(pw<50||ph<30)return setTimeout(()=>updateEquityChart(trades),200); // wait for layout
 
-    const vals=[init,...pts];const minV=Math.min(...vals)*0.98,maxV=Math.max(...vals)*1.02,rng=maxV-minV||1;
-    const n=pts.length;
+    const vals=[init,...pts].filter(v=>!isNaN(v));if(!vals.length)return;
+    const minV=Math.min(...vals)*0.98,maxV=Math.max(...vals)*1.02,rng=maxV-minV||1;
+    const n=pts.length;if(n<2)return;
     const toX=i=>ml+(i/(n-1))*pw;
     const toY=v=>mt+ph-((v-minV)/rng)*ph;
 
@@ -985,10 +1038,10 @@ function updateAnalyticsUI(data){
     // KPI cards
     const sharpe=(data.sharpe_ratio||0);const sharpeClass=sharpe>=1.5?"text-secondary":sharpe>0?"text-primary":"text-error";
     const elS=document.getElementById("stats-sharpe");if(elS){elS.textContent=sharpe.toFixed(2);elS.className="text-[28px] leading-tight font-headline-lg font-bold "+sharpeClass;}
-    setText("stats-profit-factor",(data.profit_factor||0).toFixed(2));
-    setText("stats-recovery-factor",(data.recovery_factor||0).toFixed(2));
+    const pf=data.profit_factor;setText("stats-profit-factor",(pf==null||pf==Infinity||pf=='inf'?'inf':Number(pf).toFixed(2)));
+    const rf=data.recovery_factor;setText("stats-recovery-factor",(rf==null||rf==Infinity||rf=='inf'?'inf':Number(rf).toFixed(2)));
     setText("stats-win-count",String(data.win_count||0));setText("stats-loss-count",String(data.loss_count||0));
-    setText("stats-win-loss-ratio",((data.win_count||0)/(data.loss_count||1)).toFixed(2));
+    const wc=data.win_count||0;const lc=data.loss_count||0;setText("stats-win-loss-ratio",lc===0?'inf':(wc/lc).toFixed(2));
 
     // Duration & activity
     setText("stats-avg-duration",data.formatted_duration||"-");
@@ -999,7 +1052,7 @@ function updateAnalyticsUI(data){
     // Avg results
     setText("stats-avg-win","$"+(data.avg_win||0).toFixed(2));
     setText("stats-avg-loss","$"+(data.avg_loss||0).toFixed(2));
-    setText("stats-avg-win-loss-ratio",(data.win_loss_ratio||0).toFixed(2));
+    const wlr=data.win_loss_ratio;setText("stats-avg-win-loss-ratio",(wlr==null||wlr==Infinity||wlr=='inf'?'inf':Number(wlr).toFixed(2)));
     const mdd=(data.max_drawdown_pct||0);const mddEl=document.getElementById("stats-max-drawdown");
     if(mddEl){mddEl.textContent=mdd.toFixed(2)+"%";mddEl.className="font-data-mono font-bold "+(mdd<10?"text-secondary":"text-error");}
 
@@ -1021,15 +1074,16 @@ function updateAnalyticsUI(data){
     // Slippage table
     const slip=data.slippage_summary;const slipTbody=document.getElementById("stats-slippage-tbody");
     if(slip&&slipTbody){
+        const fmtV=(v)=>typeof v==='number'?v.toFixed(2)+' bps':'-';
+        const clsV=(v)=>typeof v==='number'?(v>0.05?'text-error font-bold':v<-0.05?'text-secondary font-bold':'text-on-surface-variant'):'text-on-surface-variant';
         let h="";const bySym=slip.by_symbol||[];
         bySym.forEach(s=>{
             const se=s.entry_slip_bps,ex=s.exit_slip_bps,to=s.total_slip_bps;
-            const cls=(v)=>(v||0)>0.05?"text-error font-bold":(v||0)<-0.05?"text-secondary font-bold":"text-on-surface-variant";
-            h+='<tr class="border-b border-surface-bright/30"><td class="py-2 font-bold text-on-surface">'+(s.symbol||"-")+'</td><td class="py-2 text-right font-data-mono '+cls(se)+'">'+(se!=null?se.toFixed(2)+" bps":"-")+'</td><td class="py-2 text-right font-data-mono '+cls(ex)+'">'+(ex!=null?ex.toFixed(2)+" bps":"-")+'</td><td class="py-2 text-right font-data-mono '+cls(to)+'">'+(to!=null?to.toFixed(2)+" bps":"-")+'</td><td class="py-2 text-center font-data-mono text-on-surface-variant">'+(s.tracked_count||0)+'</td></tr>';
+            h+='<tr class=\"border-b border-surface-bright/30\"><td class=\"py-2 font-bold text-on-surface\">'+(s.symbol||'-')+'</td><td class=\"py-2 text-right font-data-mono '+clsV(se)+'\">'+fmtV(se)+'</td><td class=\"py-2 text-right font-data-mono '+clsV(ex)+'\">'+fmtV(ex)+'</td><td class=\"py-2 text-right font-data-mono '+clsV(to)+'\">'+fmtV(to)+'</td><td class=\"py-2 text-center font-data-mono text-on-surface-variant\">'+(s.tracked_count||0)+'</td></tr>';
         });
         // Global summary row
         const ge=slip.global_avg_entry_slip,gx=slip.global_avg_exit_slip,gt=slip.global_avg_total_slip;
-        h+='<tr class="bg-surface-bright/30 font-bold border-t-2 border-surface-bright"><td class="py-2 text-on-surface">RAZEM</td><td class="py-2 text-right font-data-mono">'+(ge!=null?ge.toFixed(2)+" bps":"-")+'</td><td class="py-2 text-right font-data-mono">'+(gx!=null?gx.toFixed(2)+" bps":"-")+'</td><td class="py-2 text-right font-data-mono">'+(gt!=null?gt.toFixed(2)+" bps":"-")+'</td><td class="py-2 text-center font-data-mono text-on-surface-variant">'+(slip.global_tracked_count||0)+'</td></tr>';
+        h+='<tr class=\"bg-surface-bright/30 font-bold border-t-2 border-surface-bright\"><td class=\"py-2 text-on-surface\">RAZEM</td><td class=\"py-2 text-right font-data-mono\">'+fmtV(ge)+'</td><td class=\"py-2 text-right font-data-mono\">'+fmtV(gx)+'</td><td class=\"py-2 text-right font-data-mono\">'+fmtV(gt)+'</td><td class=\"py-2 text-center font-data-mono text-on-surface-variant\">'+(slip.global_tracked_count||0)+'</td></tr>';
         slipTbody.innerHTML=h;
     }
 }
@@ -1173,7 +1227,7 @@ async function fetchJournalData(){
     if(journalLoading)return;
     journalLoading=true;
     renderJournalCalendar();
-    try{journalAllTrades=await(await fetch(API_BASE+"/api/trades/all")).json();}catch(e){journalAllTrades=[];}
+    try{journalAllTrades=await(await fetch(API_BASE+"/api/trades/all?pipeline="+currentPipeline)).json();}catch(e){journalAllTrades=[];}
     journalLoading=false;
     renderJournalCalendar();
 }
@@ -1351,7 +1405,7 @@ function renderRiskPanel(){
 
 // ── Active Orders ─────────────────────────────────────────────
 async function fetchOrders(){
-    try{const r=await fetch(API_BASE+"/api/orders");const d=await r.json();renderOrders(d.orders||[]);}catch(e){}
+    try{const r=await fetch(API_BASE+"/api/orders?pipeline="+currentPipeline);const d=await r.json();renderOrders(d.orders||[]);}catch(e){}
 }
 function renderOrders(orders){
     const el=document.getElementById("active-orders");if(!el)return;
@@ -1364,7 +1418,7 @@ function renderOrders(orders){
 }
 // ── Events Feed ────────────────────────────────────────────────
 async function fetchEvents(){
-    try{const r=await fetch(API_BASE+"/api/events");const events=await r.json();renderEvents(events);}catch(e){}
+    try{const r=await fetch(API_BASE+"/api/events?pipeline="+currentPipeline);const events=await r.json();renderEvents(events);}catch(e){}
 }
 function renderEvents(events){
     const el=document.getElementById("events-feed");if(!el)return;
@@ -1448,6 +1502,7 @@ function startPolling(){
     pollAnalytics=setInterval(fetchAnalytics,15000);
     setInterval(fetchOrders,10000);
     setInterval(fetchEvents,5000);
+    setInterval(fetchCompare,10000);
 }
 startPolling();
 switchTab("overview");

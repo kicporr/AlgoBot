@@ -77,14 +77,16 @@ class DataValidator:
         if prev is not None and prev > 0:
             change = abs(c - prev) / prev
             if change > self.max_price_jump_pct:
+                if change > 0.90:  # >90% jump = corrupted data, reject
+                    return ValidationResult(False,
+                        f"Extreme price jump ({change:.1%}): prev={prev:.2f} -> curr={c:.2f} — corrupted data")
                 logger.warning(
                     f"Large price jump: {change:.2%} | "
-                    f"Prev close={prev:.2f} → Current close={c:.2f} | "
+                    f"Prev close={prev:.2f} -> Current close={c:.2f} | "
                     f"Timestamp={ts}"
                 )
-                # NOTE: We still accept the candle; extreme moves happen in crypto.
-                # The warning is logged for investigation. Circuit breaker handles
-                # volatility at the risk layer.
+                # NOTE: Jumps up to 90% are accepted; crypto can move fast.
+                # Circuit breaker handles volatility at the risk layer.
         
         # --- 7. Timestamp sanity (optional: check not too far in future) ---
         import time

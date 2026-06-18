@@ -55,6 +55,75 @@ from risk.circuit_breaker import CircuitBreaker, BreakerState
 from risk.risk_monitor import RiskMonitor
 
 
+class TradingPipeline:
+    """Encapsulates all state for one independent trading strategy.
+
+    Enables side-by-side comparison of two strategies (e.g. pure MTF_MACD
+    vs MTF_MACD + MetaLabeler) on the same symbols with separate capital.
+    """
+
+    def __init__(self, name: str, config: dict, symbols: list[str],
+                 use_meta_labeler: bool = False):
+        self.name = name
+        self.config = config
+        self.symbols = symbols
+        self.use_meta_labeler = use_meta_labeler
+
+        # Capital tracking (independent per pipeline)
+        self.initial_capital = config.get("risk", {}).get("initial_capital", 10000.0)
+        self.equity = self.initial_capital
+        self.balance = self.initial_capital
+        self.recent_trades_pnl: list[float] = []
+
+        # Risk (independent per pipeline)
+        self.circuit_breaker = CircuitBreaker(config)
+        self.risk_monitor = RiskMonitor(config)
+
+        # Meta-labeler (only for "ml" pipeline)
+        self.meta_labeler = None
+        if use_meta_labeler:
+            try:
+                from strategies.meta_labeling import MetaLabeler
+                self.meta_labeler = MetaLabeler(config)
+            except Exception as e:
+                from loguru import logger
+                logger.warning(f"Pipeline '{name}': MetaLabeler init failed: {e}")
+
+        # Per-symbol state (built by TradingBot after init)
+        self.symbol_states: dict = {}
+        self.open_positions: dict = {}
+        self.circuit_breaker_alert_sent = False
+
+        # Compatibility fallbacks (set to first symbol after symbol_states populated)
+        self.position_tracker = None
+        self.feature_engine = None
+        self.strategies = None
+        self.regime_classifier = None
+        self.ensemble = None
+        self.position_sizer = None
+        self.latest_features = {}
+
+    def total_unrealized_pnl(self) -> float:
+        """Sum unrealized PnL across all open positions."""
+        total = 0.0
+        for sym, state in self.symbol_states.items():
+            for side, pos in state.get("open_positions", {}).items():
+                try:
+                    close_price = (state.get("latest_features", {}).get("close")
+                                   or pos["entry_price"])
+                except Exception:
+                    close_price = pos["entry_price"]
+                if side == "long":
+                    total += pos["size"] * (close_price - pos["entry_price"])
+                else:
+                    total += pos["size"] * (pos["entry_price"] - close_price)
+        return total
+
+    def update_equity(self):
+        """Recalculate equity = balance + unrealized PnL."""
+        self.equity = self.balance + self.total_unrealized_pnl()
+
+
 class TradingBot:
     """Main trading bot — wires everything together."""
     
@@ -108,43 +177,60 @@ class TradingBot:
         
         # ── Multi-Symbol Setup ────────────────────────────────
         self.symbols = self.config.get("exchange", {}).get("symbols", ["BTC/USDT:USDT"])
-        self.symbol_states = {}
-        
-        for symbol in self.symbols:
-            symbol_cfg = self._get_symbol_config(symbol)
-            
-            # Strategies
-            strategies = {
-                "mtf_macd": MTF_MACD_Elder(symbol_cfg),
-                "mean_reversion": MeanReversion(symbol_cfg),
-            }
-            
-            # Regime Classifier and Ensemble Router
-            regime_classifier = RegimeClassifier(symbol_cfg)
-            ensemble = EnsembleRouter(strategies, regime_classifier)
-            
-            # Feature Engine
-            feature_engine = FeatureEngine(symbol_cfg)
-            
-            # Position Tracker
-            position_tracker = PositionTracker(symbol_cfg)
-            
-            # Position Sizer
-            position_sizer = KellyPositionSizer(symbol_cfg)
-            
-            self.symbol_states[symbol] = {
-                "config": symbol_cfg,
-                "feature_engine": feature_engine,
-                "strategies": strategies,
-                "regime_classifier": regime_classifier,
-                "ensemble": ensemble,
-                "position_tracker": position_tracker,
-                "position_sizer": position_sizer,
-                "open_positions": {},
-                "latest_features": {},
-            }
 
-        # WebSocket clients (one per symbol, sharing REST client)
+        def _build_symbol_states(for_pipeline: TradingPipeline = None):
+            """Build per-symbol state dict. Reused for each pipeline."""
+            states = {}
+            for symbol in self.symbols:
+                symbol_cfg = self._get_symbol_config(symbol)
+                strategies = {
+                    "mtf_macd": MTF_MACD_Elder(symbol_cfg),
+                    "mean_reversion": MeanReversion(symbol_cfg),
+                }
+                regime_classifier = RegimeClassifier(symbol_cfg)
+                ensemble = EnsembleRouter(strategies, regime_classifier)
+                feature_engine = FeatureEngine(symbol_cfg)
+                position_tracker = PositionTracker(symbol_cfg)
+                position_sizer = KellyPositionSizer(symbol_cfg)
+                states[symbol] = {
+                    "config": symbol_cfg,
+                    "feature_engine": feature_engine,
+                    "strategies": strategies,
+                    "regime_classifier": regime_classifier,
+                    "ensemble": ensemble,
+                    "position_tracker": position_tracker,
+                    "position_sizer": position_sizer,
+                    "open_positions": {},
+                    "latest_features": {},
+                }
+            return states
+
+        # ── Dual Pipelines ────────────────────────────────────
+        self.pipelines = {
+            "pure": TradingPipeline("pure", self.config, self.symbols, use_meta_labeler=False),
+            "ml": TradingPipeline("ml", self.config, self.symbols, use_meta_labeler=True),
+        }
+        for p in self.pipelines.values():
+            p.symbol_states = _build_symbol_states(p)
+            # Compatibility fallbacks (first symbol)
+            first_sym = self.symbols[0]
+            fs = p.symbol_states[first_sym]
+            p.position_tracker = fs["position_tracker"]
+            p.feature_engine = fs["feature_engine"]
+            p.strategies = fs["strategies"]
+            p.regime_classifier = fs["regime_classifier"]
+            p.ensemble = fs["ensemble"]
+            p.position_sizer = fs["position_sizer"]
+
+        self.logger.info(
+            f"Dual pipelines initialized: pure={self.pipelines['pure'].balance:.0f} "
+            f"ml={self.pipelines['ml'].balance:.0f} (meta_labeler={self.pipelines['ml'].meta_labeler is not None})"
+        )
+
+        # Legacy compatibility — backward refs for tests and dashboard
+        self.symbol_states = self.pipelines["pure"].symbol_states
+
+        # WebSocket clients (one per symbol, shared across pipelines)
         self.ws_clients = {}
         if has_websocket():
             for symbol in self.symbols:
@@ -152,40 +238,32 @@ class TradingBot:
                 self.ws_clients[symbol] = BitgetWSClient(symbol_cfg, rest_client=self.rest_client)
         else:
             self.logger.warning("websocket-client not installed — live mode disabled")
-        
-        # ── Execution layer ──────────────────────────────────
+
+        # ── Execution layer (shared) ─────────────────────────
         self.exchange = ExchangeAdapter(self.config, exchange=self._ccxt_exchange)
         self.order_manager = OrderManager(self.config, self.exchange)
-        
-        # Single instances for fallback/backward compatibility
-        first_symbol = self.symbols[0]
-        self.position_tracker = self.symbol_states[first_symbol]["position_tracker"]
-        self.feature_engine = self.symbol_states[first_symbol]["feature_engine"]
-        self.strategies = self.symbol_states[first_symbol]["strategies"]
-        self.regime_classifier = self.symbol_states[first_symbol]["regime_classifier"]
-        self.ensemble = self.symbol_states[first_symbol]["ensemble"]
-        self.position_sizer = self.symbol_states[first_symbol]["position_sizer"]
-        
-        # Risk (global)
-        self.circuit_breaker = CircuitBreaker(self.config)
-        self.risk_monitor = RiskMonitor(self.config)
+
+        # Legacy compatibility fallbacks (point to pure pipeline)
+        self.position_tracker = self.pipelines["pure"].position_tracker
+        self.feature_engine = self.pipelines["pure"].feature_engine
+        self.strategies = self.pipelines["pure"].strategies
+        self.regime_classifier = self.pipelines["pure"].regime_classifier
+        self.ensemble = self.pipelines["pure"].ensemble
+        self.position_sizer = self.pipelines["pure"].position_sizer
+        self.circuit_breaker = self.pipelines["pure"].circuit_breaker
+        self.risk_monitor = self.pipelines["pure"].risk_monitor
+        # Note: meta_labeler is per-pipeline (pure=None, ml=MetaLabeler instance)
+        # The backward-compat property delegates to the active pipeline
+
+        # ── Global state ──────────────────────────────────────
         self.high_corr_pairs = {
             ("BTC/USDT:USDT", "ETH/USDT:USDT"): 0.48,
             ("BTC/USDT:USDT", "LTC/USDT:USDT"): 0.48,
             ("BTC/USDT:USDT", "SOL/USDT:USDT"): 0.44,
         }
-        
-        # State
         self.running = False
         self.paper_trading = self.config.get("bot", {}).get("mode", "paper") == "paper"
-        self.initial_capital = self.config.get("risk", {}).get("initial_capital", 10000.0)
-        self.equity = self.initial_capital
-        self.balance = self.initial_capital
-        self.recent_trades_pnl: list[float] = []  # Last 50 trades PnL
-        self.open_positions: dict = {}  # Track paper positions: {side: {entry_price, size, ts}} (backward compatibility)
-        self.circuit_breaker_alert_sent = False
         self.dashboard_server = None
-        self.latest_features = {}
         self.scheduler_thread = None
 
         # Priming tracking (set here for safety; filled in start())
@@ -193,6 +271,90 @@ class TradingBot:
         self._priming_attempted = False
         self._priming_warned_for: set[str] = set()
         self._priming_empty_count: dict[str, int] = {}
+
+    # ─── Pipeline context (switched by _on_1h_candle_dual) ──
+
+    def _active(self) -> TradingPipeline:
+        return getattr(self, '_active_pipeline', self.pipelines["pure"])
+
+    # ─── Backward-compatible properties (delegate to active pipeline) ──
+
+    @property
+    def balance(self):
+        return self._active().balance
+    @balance.setter
+    def balance(self, v):
+        self._active().balance = v
+
+    @property
+    def equity(self):
+        return self._active().equity
+    @equity.setter
+    def equity(self, v):
+        self._active().equity = v
+
+    @property
+    def initial_capital(self):
+        return self._active().initial_capital
+    @initial_capital.setter
+    def initial_capital(self, v):
+        self._active().initial_capital = v
+
+    @property
+    def recent_trades_pnl(self):
+        return self._active().recent_trades_pnl
+    @recent_trades_pnl.setter
+    def recent_trades_pnl(self, v):
+        self._active().recent_trades_pnl = v
+
+    @property
+    def open_positions(self):
+        return self._active().open_positions
+    @open_positions.setter
+    def open_positions(self, v):
+        self._active().open_positions = v
+
+    @property
+    def symbol_states(self):
+        return self._active().symbol_states
+    @symbol_states.setter
+    def symbol_states(self, v):
+        self._active().symbol_states = v
+
+    @property
+    def circuit_breaker(self):
+        return self._active().circuit_breaker
+    @circuit_breaker.setter
+    def circuit_breaker(self, v):
+        self._active().circuit_breaker = v
+
+    @property
+    def risk_monitor(self):
+        return self._active().risk_monitor
+    @risk_monitor.setter
+    def risk_monitor(self, v):
+        self._active().risk_monitor = v
+
+    @property
+    def circuit_breaker_alert_sent(self):
+        return self._active().circuit_breaker_alert_sent
+    @circuit_breaker_alert_sent.setter
+    def circuit_breaker_alert_sent(self, v):
+        self._active().circuit_breaker_alert_sent = v
+
+    @property
+    def latest_features(self):
+        return self._active().latest_features
+    @latest_features.setter
+    def latest_features(self, v):
+        self._active().latest_features = v
+
+    @property
+    def meta_labeler(self):
+        return self._active().meta_labeler
+    @meta_labeler.setter
+    def meta_labeler(self, v):
+        self._active().meta_labeler = v
 
     @property
     def ws_client(self):
@@ -258,49 +420,52 @@ class TradingBot:
         if self.rest_client:
             import time as _time
             max_retries = 3
-            for symbol in self.symbols:
-                state = self.symbol_states[symbol]
-                for attempt in range(1, max_retries + 1):
-                    try:
-                        self.logger.info(f"Priming caches for {symbol} (attempt {attempt}/{max_retries})...")
-                        df_1h = self.rest_client.fetch_days(timeframe="1h", days=30, symbol=symbol)
-                        df_4h = self.rest_client.fetch_days(timeframe="4h", days=30, symbol=symbol)
-                        df_1d = self.rest_client.fetch_days(timeframe="1d", days=45, symbol=symbol)
+            # Prime BOTH pipelines (pure and ml share feature data, but each needs its own strategy state)
+            for pipe_name, pipeline in self.pipelines.items():
+                self._active_pipeline = pipeline
+                for symbol in self.symbols:
+                    state = pipeline.symbol_states[symbol]
+                    for attempt in range(1, max_retries + 1):
+                        try:
+                            self.logger.info(f"[{pipe_name}] Priming caches for {symbol} (attempt {attempt}/{max_retries})...")
+                            df_1h = self.rest_client.fetch_days(timeframe="1h", days=30, symbol=symbol)
+                            df_4h = self.rest_client.fetch_days(timeframe="4h", days=30, symbol=symbol)
+                            df_1d = self.rest_client.fetch_days(timeframe="1d", days=45, symbol=symbol)
 
-                        if not df_1h.empty:
-                            state["feature_engine"].prime_cache(
-                                df_1h,
-                                df_4h if not df_4h.empty else None,
-                                df_1d if not df_1d.empty else None
-                            )
-                            df_feats = state["feature_engine"].bulk_compute(
-                                df_1h,
-                                df_4h if not df_4h.empty else None,
-                                df_1d if not df_1d.empty else None
-                            )
-                            if not df_feats.empty:
-                                state["latest_features"] = df_feats.iloc[-1].to_dict()
-                                self.latest_features = state["latest_features"]
-                                self._priming_success[symbol] = True
-                                self.logger.info(f"Feature engine primed for {symbol} ({len(state['latest_features'])} features)")
-
-                        if not df_1d.empty:
-                            mtf_macd = state["strategies"].get("mtf_macd")
-                            if mtf_macd:
-                                mtf_macd._d1_closes = []
-                                for _, row in df_1d.iterrows():
-                                    mtf_macd.on_higher_tf_candle(row.to_dict(), "1d")
-                                self.logger.info(
-                                    f"MTF MACD primed for {symbol}: {len(mtf_macd._d1_closes)} D1 closes, "
-                                    f"Trend={mtf_macd.d1_trend}"
+                            if not df_1h.empty:
+                                state["feature_engine"].prime_cache(
+                                    df_1h,
+                                    df_4h if not df_4h.empty else None,
+                                    df_1d if not df_1d.empty else None
                                 )
-                        break  # Success — skip remaining retries
+                                df_feats = state["feature_engine"].bulk_compute(
+                                    df_1h,
+                                    df_4h if not df_4h.empty else None,
+                                    df_1d if not df_1d.empty else None
+                                )
+                                if not df_feats.empty:
+                                    state["latest_features"] = df_feats.iloc[-1].to_dict()
+                                    self._priming_success[symbol] = True
+                                    self.logger.info(f"[{pipe_name}] Feature engine primed for {symbol} ({len(state['latest_features'])} features)")
 
-                    except Exception as e:
-                        self.logger.warning(f"Priming attempt {attempt}/{max_retries} failed for {symbol}: {e}")
-                        if attempt < max_retries:
-                            _time.sleep(5)
+                            if not df_1d.empty:
+                                mtf_macd = state["strategies"].get("mtf_macd")
+                                if mtf_macd:
+                                    mtf_macd._d1_closes = []
+                                    for _, row in df_1d.iterrows():
+                                        mtf_macd.on_higher_tf_candle(row.to_dict(), "1d")
+                                    self.logger.info(
+                                        f"[{pipe_name}] MTF MACD primed for {symbol}: {len(mtf_macd._d1_closes)} D1 closes, "
+                                        f"Trend={mtf_macd.d1_trend}"
+                                    )
+                            break  # Success — skip remaining retries
 
+                        except Exception as e:
+                            self.logger.warning(f"[{pipe_name}] Priming attempt {attempt}/{max_retries} failed for {symbol}: {e}")
+                            if attempt < max_retries:
+                                _time.sleep(5)
+
+            self._active_pipeline = self.pipelines["pure"]  # Reset to default
             self._priming_attempted = True
             failed = [s for s, ok in self._priming_success.items() if not ok]
             if failed:
@@ -314,18 +479,18 @@ class TradingBot:
                     force=True,
                 )
             else:
-                self.logger.info("All symbols primed successfully.")
+                self.logger.info("All symbols primed successfully for both pipelines.")
 
         self.telegram.alert("🚀 bocik started")
 
         # ── Wire callbacks ───────────────────────────────────────
         if self.ws_clients and has_websocket():
             for symbol, ws in self.ws_clients.items():
-                # Bind callbacks using lambda with symbol as default argument to capture value
+                # Bind callbacks with fan-out to both pipelines
                 ws.on_candle("1m", lambda candle, s=symbol: self._on_1m_candle(s, candle))
-                ws.on_candle("1h", lambda candle, s=symbol: self._on_1h_candle(s, candle))
-                ws.on_candle("4h", lambda candle, s=symbol: self._on_4h_candle(s, candle))
-                ws.on_candle("1d", lambda candle, s=symbol: self._on_1d_candle(s, candle))
+                ws.on_candle("1h", lambda candle, s=symbol: self._on_1h_candle_dual(s, candle))
+                ws.on_candle("4h", lambda candle, s=symbol: self._on_4h_candle_dual(s, candle))
+                ws.on_candle("1d", lambda candle, s=symbol: self._on_1d_candle_dual(s, candle))
                 
                 # Start WS (auto-primes resampler with historical data, then streams)
                 backfill_hours = self.config.get("data", {}).get("backfill", {}).get("prime_hours", 24)
@@ -379,6 +544,16 @@ class TradingBot:
         candle["symbol"] = symbol
         self.candle_repo.insert(candle)
     
+    def _on_1h_candle_dual(self, symbol: str, candle: dict):
+        """Fan out 1H candle to both pipelines for independent trading."""
+        for pipe_name, pipeline in self.pipelines.items():
+            self._active_pipeline = pipeline
+            try:
+                self._on_1h_candle(symbol, candle)
+            except Exception as e:
+                self.logger.error(f"[{pipe_name}] {symbol} handler error: {e}", exc_info=True)
+        self._active_pipeline = self.pipelines["pure"]  # Reset to default
+
     def _on_1h_candle(self, symbol: str, candle: dict):
         """Main trading logic — called when a new 1H candle completes.
 
@@ -500,7 +675,44 @@ class TradingBot:
             
             # ── Generate strategy signal via ensemble router ─────────
             signal = state["ensemble"].get_signal(candle, features)
-            
+
+            # ── Meta-labeling filter (ML-based signal approval) ──────
+            if signal != Signal.FLAT and self.meta_labeler is not None and self.meta_labeler.is_ready():
+                import time as _t
+                _t0 = _t.monotonic()
+                approved = self.meta_labeler.evaluate(signal, features)
+                _latency_ms = (_t.monotonic() - _t0) * 1000
+
+                # Track latency (log once per hour)
+                if not hasattr(self, '_ml_latency_samples'):
+                    self._ml_latency_samples = []
+                self._ml_latency_samples.append(_latency_ms)
+                if len(self._ml_latency_samples) >= 50:
+                    avg = sum(self._ml_latency_samples) / len(self._ml_latency_samples)
+                    p99 = sorted(self._ml_latency_samples)[int(len(self._ml_latency_samples) * 0.99)]
+                    self.logger.info(
+                        f"MetaLabeler latency: avg={avg:.2f}ms p99={p99:.2f}ms "
+                        f"({len(self._ml_latency_samples)} samples)"
+                    )
+                    self._ml_latency_samples = []
+                    if p99 > 100:
+                        self.telegram.alert(
+                            f"[LATENCY] MetaLabeler p99={p99:.1f}ms > 100ms. "
+                            f"Check system load.",
+                            force=True,
+                        )
+
+                if not approved:
+                    self.logger.debug(f"[{symbol}] Meta-labeler rejected {signal.name} signal")
+                    self.signal_repo.insert({
+                        "timestamp": candle["timestamp"],
+                        "strategy": f"mtf_macd:{symbol}",
+                        "signal": signal.value,
+                        "executed": False,
+                        "reject_reason": "meta_labeler_rejected",
+                    })
+                    signal = Signal.FLAT
+
             # ── Check opposite strategy signal exit ───────────────
             if in_position:
                 is_opposite = (position_side == "long" and signal == Signal.SHORT) or \
@@ -533,6 +745,7 @@ class TradingBot:
             if total_active_positions >= max_concurrent:
                 self.logger.debug(f"[{symbol}] Entry blocked by max concurrent positions ({total_active_positions}/{max_concurrent})")
                 self.signal_repo.insert({
+                    "pipeline": self._active().name,
                     "timestamp": candle["timestamp"],
                     "strategy": f"mtf_macd:{symbol}",
                     "signal": signal.value,
@@ -598,6 +811,7 @@ class TradingBot:
                     f"loss_streak={consecutive_losses}"
                 )
                 self.signal_repo.insert({
+                    "pipeline": self._active().name,
                     "timestamp": candle["timestamp"],
                     "strategy": f"mtf_macd:{symbol}",
                     "signal": signal.value,
@@ -614,6 +828,7 @@ class TradingBot:
                     f"Current Exposure: ${total_exposure_val:.2f}, Proj Exposure: ${total_exposure_val + new_position_value:.2f}, Limit: ${max_exposure_limit:.2f}"
                 )
                 self.signal_repo.insert({
+                    "pipeline": self._active().name,
                     "timestamp": candle["timestamp"],
                     "strategy": f"mtf_macd:{symbol}",
                     "signal": signal.value,
@@ -632,6 +847,26 @@ class TradingBot:
             self.logger.error(f"[{symbol}] 1H handler error: {e}", exc_info=True)
             self.telegram.error(f"[{symbol}] 1H handler error: {e}")
     
+    def _on_4h_candle_dual(self, symbol: str, candle: dict):
+        """Fan out 4H candle to both pipelines for regime updates."""
+        for pipeline in self.pipelines.values():
+            self._active_pipeline = pipeline
+            try:
+                self._on_4h_candle(symbol, candle)
+            except Exception as e:
+                self.logger.error(f"[{pipeline.name}] 4H handler error: {e}", exc_info=True)
+        self._active_pipeline = self.pipelines["pure"]
+
+    def _on_1d_candle_dual(self, symbol: str, candle: dict):
+        """Fan out 1D candle to both pipelines for D1 trend updates."""
+        for pipeline in self.pipelines.values():
+            self._active_pipeline = pipeline
+            try:
+                self._on_1d_candle(symbol, candle)
+            except Exception as e:
+                self.logger.error(f"[{pipeline.name}] 1D handler error: {e}", exc_info=True)
+        self._active_pipeline = self.pipelines["pure"]
+
     def _on_4h_candle(self, symbol: str, candle: dict):
         """Called when a new 4H candle completes — reassess market regime."""
         try:
@@ -794,8 +1029,19 @@ class TradingBot:
             "exit_reason": reason,
             "theoretical_entry_price": theoretical_entry,
             "theoretical_exit_price": theoretical_exit,
+            "pipeline": self._active().name,
         })
-    
+
+        # Record outcome for meta-labeler degradation monitoring
+        if self.meta_labeler is not None and self.meta_labeler.is_ready():
+            self.meta_labeler.record_outcome(approved=True, was_profitable=pnl > 0)
+            # Check for degradation alerts (every 10 trades to avoid spam)
+            if len(getattr(self.meta_labeler, '_outcome_log', [])) % 10 == 0:
+                alerts = self.meta_labeler.check_degradation()
+                for alert in alerts:
+                    self.logger.warning(f"MetaLabeler degradation: {alert}")
+                    self.telegram.alert(f"[DEGRADATION] {alert}", force=True)
+
     def _execute_signal(self, symbol: str, signal: Signal, candle: dict, size_coin: float, atr: float = 0.0, atr_pct: float = 2.0):
         """Execute a trading signal (paper or live)."""
         close = candle["close"]
@@ -917,14 +1163,14 @@ class TradingBot:
         return {"ok": True, "closed": closed}
 
     def emergency_stop(self):
-        """Emergency stop — close all positions immediately."""
+        """Emergency stop — close all positions on ALL pipelines immediately."""
         self.logger.critical("EMERGENCY STOP TRIGGERED")
-        self.circuit_breaker.emergency_stop("Manual emergency")
-        
+        for pipeline in self.pipelines.values():
+            pipeline.circuit_breaker.emergency_stop("Manual emergency")
+
         for symbol in self.symbols:
-            state = self.symbol_states[symbol]
+            # Cancel all open orders on exchange (once per symbol, shared across pipelines)
             if not self.paper_trading:
-                # Cancel all open orders on exchange for this symbol
                 try:
                     open_orders = self.exchange.fetch_open_orders(symbol)
                     for order in open_orders:
@@ -932,27 +1178,32 @@ class TradingBot:
                         self.logger.warning(f"LIVE: Emergency cancel order {order_id} for {symbol}")
                         self.exchange.cancel_order(order_id, symbol)
                 except Exception as e:
-                    self.logger.error(f"LIVE: Failed to cancel open orders for {symbol} in emergency: {e}")
+                    self.logger.error(f"LIVE: Failed to cancel open orders for {symbol}: {e}")
 
-                # Close all active positions for this symbol at market price
-                for side, pos in list(state["open_positions"].items()):
-                    size = pos["size"]
-                    opposite_side = "sell" if side == "long" else "buy"
-                    self.logger.warning(f"LIVE: Emergency market close for {symbol} {side.upper()} position of size {size}")
-                    try:
-                        if opposite_side == "sell":
-                            self.exchange.create_market_sell_order(symbol, size)
-                        else:
-                            self.exchange.create_market_buy_order(symbol, size)
-                    except Exception as e:
-                        self.logger.critical(f"LIVE: Failed to emergency market close {symbol} {side.upper()}: {e}")
-            
-            # Clear symbol-specific positions
-            state["open_positions"].clear()
-            state["position_tracker"].exit()
-            
-        # For paper or live, clear local state and stop bot
-        self.open_positions.clear()
+            # Close positions for ALL pipelines
+            for pipeline in self.pipelines.values():
+                state = pipeline.symbol_states[symbol]
+                if not self.paper_trading:
+                    for side, pos in list(state["open_positions"].items()):
+                        size = pos["size"]
+                        opposite_side = "sell" if side == "long" else "buy"
+                        self.logger.warning(f"LIVE [{pipeline.name}]: Emergency market close for {symbol} {side.upper()} size={size}")
+                        try:
+                            if opposite_side == "sell":
+                                self.exchange.create_market_sell_order(symbol, size)
+                            else:
+                                self.exchange.create_market_buy_order(symbol, size)
+                        except Exception as e:
+                            self.logger.critical(f"LIVE [{pipeline.name}]: Failed emergency close {symbol} {side.upper()}: {e}")
+
+                # Clear positions for this pipeline
+                state["open_positions"].clear()
+                state["position_tracker"].exit()
+
+        # Clear all pipeline position tracking
+        for pipeline in self.pipelines.values():
+            pipeline.open_positions.clear()
+        self._active_pipeline = self.pipelines["pure"]
         self.stop("Emergency stop")
 
     def reset_circuit_breaker(self):
@@ -974,28 +1225,48 @@ class TradingBot:
         self.telegram.alert("🔄 Circuit breaker manually reset. Bot resumed trading.", force=True)
 
     def _scheduler_loop(self):
-        """Background thread loop to run daily/weekly reports."""
+        """Background thread loop: degradation monitoring, retraining, daily/weekly reports."""
         import datetime
         self.logger.info("Periodic report scheduler loop started.")
         last_sent_date = None
-        
+        last_retrain_month = None  # Track 6-month retraining cycle
+
         while self.running:
             try:
+                now = datetime.datetime.now()
+                today_str = now.strftime("%Y-%m-%d")
+                current_month = now.strftime("%Y-%m")
+
+                # ── Periodic MetaLabeler retraining (every 6 months) ──
+                if (self.meta_labeler is not None
+                        and current_month != last_retrain_month
+                        and now.month % 6 == 1
+                        and now.day == 1
+                        and now.hour == 2):  # 2 AM on Jan 1st and Jul 1st
+                    last_retrain_month = current_month
+                    self.logger.info("Scheduled MetaLabeler retraining (6-month cycle)...")
+                    # Retraining would need historical trade data with features —
+                    # this requires loading trade history from DB and re-running feature computation.
+                    # For now: log and alert that retraining is due.
+                    self.telegram.alert(
+                        "[SCHEDULED] MetaLabeler 6-month retraining due. "
+                        "Run research/meta_labeling_optimized.py to retrain.",
+                        force=True,
+                    )
+
+                # ── Degradation check + Reports (daily at target hour) ──
                 reports_cfg = self.config.get("monitoring", {}).get("telegram", {}).get("reports", {})
                 if not reports_cfg.get("enabled", False):
                     time.sleep(30)
                     continue
-                
-                now = datetime.datetime.now()
-                today_str = now.strftime("%Y-%m-%d")
-                
+
                 # Check target time
                 target_time_str = reports_cfg.get("time", "22:00")
                 try:
                     target_hour, target_minute = map(int, target_time_str.split(":"))
                 except Exception:
                     target_hour, target_minute = 22, 0
-                
+
                 if now.hour == target_hour and now.minute == target_minute:
                     if last_sent_date != today_str:
                         interval = reports_cfg.get("interval", "both")

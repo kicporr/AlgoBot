@@ -316,6 +316,9 @@ class BacktestEngine:
         """
         trades = []
         pending_signal: Optional[Signal] = None
+        entry_features: Optional[dict] = None  # Features at signal time (meta-labeling)
+        entry_signal_type: Optional[str] = None
+        entry_regime: Optional[str] = None
 
         in_position = False
         position_side = ""          # "long" or "short"
@@ -475,6 +478,9 @@ class BacktestEngine:
                         "bars_held": i - entry_bar,
                         "theoretical_entry_price": round(entry_theoretical, 2),
                         "theoretical_exit_price": round(exit_price, 2),
+                        "features_at_signal": entry_features,
+                        "signal_type": entry_signal_type,
+                        "regime": entry_regime,
                     })
 
                     in_position = False
@@ -573,6 +579,18 @@ class BacktestEngine:
                     pending_signal = new_signal if new_signal != Signal.FLAT else None
                 else:
                     pending_signal = new_signal  # Keep for exit check
+
+                # Store features at signal time (for meta-labeling training)
+                if pending_signal is not None:
+                    entry_features = dict(feat) if feat else {}
+                    entry_signal_type = pending_signal.name  # "LONG" or "SHORT"
+                    entry_regime = (ensemble_router.current_regime.value
+                                    if ensemble_router and hasattr(ensemble_router, 'current_regime')
+                                    else None)
+                else:
+                    entry_features = None
+                    entry_signal_type = None
+                    entry_regime = None
 
         return trades
 
