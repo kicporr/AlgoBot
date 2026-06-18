@@ -1,0 +1,46 @@
+# ============================================================
+# bocik — Docker runtime dependencies (Python 3.11)
+# Minimal set — no training, no testing, no backtesting
+# ============================================================
+
+# --- Exchange API ---
+ccxt>=4.4.0
+
+# --- Data Processing ---
+pandas>=2.2.0
+numpy>=1.26.0
+numba>=0.59.0
+
+# --- Technical Analysis ---
+ta-lib>=0.4.28
+pandas-ta>=0.3.14b
+
+# --- Machine Learning (inference only) ---
+scikit-learn>=1.5.0
+joblib>=1.4.0
+
+# --- Database ---
+sqlalchemy>=2.0.30
+aiosqlite>=0.20.0
+
+# --- WebSocket ---
+websocket-client>=1.8.0
+
+# --- Configuration ---
+pyyaml>=6.0
+pydantic>=2.7.0
+pydantic-settings>=2.3.0
+python-dotenv>=1.0.0
+
+# --- Monitoring & Alerts ---
+python-telegram-bot>=21.3.0
+loguru>=0.7.2
+
+# --- Chart generation (Telegram reports) ---
+matplotlib>=3.9.0
+
+# --- Utilities ---
+rich>=13.7.0
+tqdm>=4.66.0
+tenacity>=8.3.0
+schedule>=1.2.0

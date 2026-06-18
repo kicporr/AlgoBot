@@ -26,9 +26,9 @@ RUN wget -q http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz \
     && cd .. \
     && rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
 
-# Python deps
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Python deps (lightweight runtime-only set)
+COPY requirements-docker.txt .
+RUN pip install --no-cache-dir -r requirements-docker.txt
 
 # App code
 COPY . .
