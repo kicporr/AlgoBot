@@ -2,7 +2,7 @@
 # bocik — Docker image (Linux x86_64)
 # ============================================================
 
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 LABEL name="bocik"
 LABEL description="Multi-asset algorithmic trading bot — 1H/4H"
