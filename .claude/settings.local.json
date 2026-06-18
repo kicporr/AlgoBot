@@ -7,7 +7,8 @@
       "Bash(/c/Users/kacpe/AppData/Local/Programs/Python/Python314/python.exe -c \"import pandas; print\\('pandas OK'\\)\")",
       "Bash(/c/Users/kacpe/AppData/Local/Programs/Python/Python314/python.exe *)",
       "Bash(pip index *)",
-      "WebFetch(domain:pypi.org)"
+      "WebFetch(domain:pypi.org)",
+      "Bash(git fetch *)"
     ]
   }
 }
