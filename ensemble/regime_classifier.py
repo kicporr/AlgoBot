@@ -65,7 +65,6 @@ class RegimeClassifier:
 
         # Rolling averages for comparison
         self._atr_samples: list[float] = []
-        self._vol_samples: list[float] = []
 
     def classify(self, features: dict) -> MarketRegime:
         """Classify current market regime from a feature dict.
@@ -164,4 +163,3 @@ class RegimeClassifier:
         self._regime_votes = []
         self._bar_count = 0
         self._atr_samples = []
-        self._vol_samples = []

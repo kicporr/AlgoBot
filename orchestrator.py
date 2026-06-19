@@ -719,7 +719,9 @@ class TradingBot:
                               (position_side == "short" and signal == Signal.LONG)
                 if is_opposite:
                     bars_held = state["position_tracker"].bars_held
-                    min_hold = state["config"].get("strategies", {}).get("mtf_macd_elder", {}).get("exit", {}).get("min_hold_bars", 6)
+                    # Read min_hold from the strategy's own config (matches backtest behavior)
+                    strat_cfg = state["config"].get("strategies", {}).get("mtf_macd_elder", {})
+                    min_hold = strat_cfg.get("exit", {}).get("min_hold_bars", 1)
                     if bars_held >= min_hold:
                         self.logger.info(f"[{symbol}] Position exit triggered by opposite strategy signal after {bars_held} bars")
                         exit_signal = Signal.SHORT if position_side == "long" else Signal.LONG
@@ -838,7 +840,7 @@ class TradingBot:
                 return
             
             # ── Execute ──────────────────────────────────────────
-            self._execute_signal(symbol, signal, candle, coin_size, atr=avg_atr, atr_pct=features.get("atr_pct", 2.0))
+            self._execute_signal(symbol, signal, candle, coin_size, features=features, atr=avg_atr, atr_pct=features.get("atr_pct", 2.0))
             
             # ── Periodic risk snapshot ───────────────────────────
             self._log_risk_snapshot()
@@ -1016,6 +1018,16 @@ class TradingBot:
             f"📥 *Wejście:* `${entry_price:,.2f}` → *Wyjście:* `${exit_price:,.2f}`\n"
             f"💵 *Equity:* `${self.equity:,.2f}`"
         )
+        # Store features_at_signal as JSON for live retraining
+        import json as _json
+        features_json_str = None
+        feats = pos.get("features_at_signal")
+        if feats and isinstance(feats, dict) and len(feats) > 0:
+            try:
+                features_json_str = _json.dumps({k: float(v) if isinstance(v, (int, float, bool)) else v for k, v in list(feats.items())[:50]})
+            except Exception:
+                pass
+
         self.trade_repo.insert({
             "entry_time": pos["ts"],
             "exit_time": candle["timestamp"],
@@ -1030,6 +1042,7 @@ class TradingBot:
             "theoretical_entry_price": theoretical_entry,
             "theoretical_exit_price": theoretical_exit,
             "pipeline": self._active().name,
+            "features_json": features_json_str,
         })
 
         # Record outcome for meta-labeler degradation monitoring
@@ -1042,7 +1055,7 @@ class TradingBot:
                     self.logger.warning(f"MetaLabeler degradation: {alert}")
                     self.telegram.alert(f"[DEGRADATION] {alert}", force=True)
 
-    def _execute_signal(self, symbol: str, signal: Signal, candle: dict, size_coin: float, atr: float = 0.0, atr_pct: float = 2.0):
+    def _execute_signal(self, symbol: str, signal: Signal, candle: dict, size_coin: float, features: dict = None, atr: float = 0.0, atr_pct: float = 2.0):
         """Execute a trading signal (paper or live)."""
         close = candle["close"]
         side = "long" if signal == Signal.LONG else "short"
@@ -1079,6 +1092,7 @@ class TradingBot:
             "highest": close, "lowest": close,
             "symbol": symbol,
             "theoretical_entry_price": close,
+            "features_at_signal": dict(features) if features is not None and hasattr(features, 'items') else (features.to_dict() if hasattr(features, 'to_dict') else {}),
         }
         state["open_positions"][side] = pos_data
 
@@ -1206,6 +1220,71 @@ class TradingBot:
         self._active_pipeline = self.pipelines["pure"]
         self.stop("Emergency stop")
 
+    def _retrain_meta_labeler_from_db(self) -> int:
+        """Retrain the ML pipeline's MetaLabeler from trades stored in the database.
+
+        Loads trades with features_json for the 'ml' pipeline, builds training data,
+        and retrains the XGBoost model. Returns number of training samples used.
+        """
+        import json as _json, sqlite3
+        ml_pipeline = self.pipelines.get("ml")
+        if not ml_pipeline or not ml_pipeline.meta_labeler:
+            self.logger.warning("MetaLabeler retraining: ML pipeline not available")
+            return 0
+
+        db_path = self.config.get("data", {}).get("database", {}).get("path", "./data/trading.db")
+        if not os.path.exists(db_path):
+            self.logger.warning(f"MetaLabeler retraining: DB not found at {db_path}")
+            return 0
+
+        # Load trades with features from DB
+        trades = []
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT pnl, side, exit_reason, strategy, features_json "
+                "FROM trades WHERE pipeline='ml' AND features_json IS NOT NULL "
+                "ORDER BY entry_time ASC"
+            ).fetchall()
+            conn.close()
+
+            for row in rows:
+                try:
+                    feats = _json.loads(row["features_json"])
+                    if feats and len(feats) > 5:
+                        trades.append({
+                            "pnl": row["pnl"] or 0,
+                            "side": row["side"],
+                            "exit_reason": row["exit_reason"],
+                            "strategy": row["strategy"],
+                            "signal_type": "LONG" if row["side"] == "long" else "SHORT",
+                            "features_at_signal": feats,
+                        })
+                except Exception:
+                    continue
+
+            self.logger.info(f"MetaLabeler retraining: loaded {len(trades)} trades with features from DB")
+        except Exception as e:
+            self.logger.error(f"MetaLabeler retraining: DB error: {e}")
+            return 0
+
+        if len(trades) < 100:
+            self.logger.info(f"MetaLabeler retraining: only {len(trades)} trades (< 100), skipping")
+            return 0
+
+        # Train
+        ok = ml_pipeline.meta_labeler.train(trades)
+        if ok:
+            diag = ml_pipeline.meta_labeler.get_diagnostics()
+            self.logger.info(
+                f"MetaLabeler retrained: {diag['training_samples']} samples, "
+                f"val_acc={diag['val_accuracy']:.3f}, "
+                f"features={diag['features_used']}"
+            )
+            return diag['training_samples']
+        return 0
+
     def reset_circuit_breaker(self):
         """Manually reset circuit breaker and trim the losing streak tail to resume trading.
 
@@ -1237,22 +1316,31 @@ class TradingBot:
                 today_str = now.strftime("%Y-%m-%d")
                 current_month = now.strftime("%Y-%m")
 
-                # ── Periodic MetaLabeler retraining (every 6 months) ──
-                if (self.meta_labeler is not None
+                # ── Periodic MetaLabeler retraining ──
+                ml_labeler = self.pipelines["ml"].meta_labeler if "ml" in self.pipelines else None
+                if (ml_labeler is not None
                         and current_month != last_retrain_month
                         and now.month % 6 == 1
                         and now.day == 1
                         and now.hour == 2):  # 2 AM on Jan 1st and Jul 1st
                     last_retrain_month = current_month
                     self.logger.info("Scheduled MetaLabeler retraining (6-month cycle)...")
-                    # Retraining would need historical trade data with features —
-                    # this requires loading trade history from DB and re-running feature computation.
-                    # For now: log and alert that retraining is due.
-                    self.telegram.alert(
-                        "[SCHEDULED] MetaLabeler 6-month retraining due. "
-                        "Run research/meta_labeling_optimized.py to retrain.",
-                        force=True,
-                    )
+                    try:
+                        n = self._retrain_meta_labeler_from_db()
+                        if n > 0:
+                            self.telegram.alert(
+                                f"[RETRAINED] MetaLabeler updated with {n} trades from DB. "
+                                f"New val_acc: {ml_labeler._train_accuracy:.3f}",
+                                force=True,
+                            )
+                        else:
+                            self.telegram.alert(
+                                "[RETRAIN SKIPPED] Not enough trades with features in DB for MetaLabeler retraining.",
+                                force=True,
+                            )
+                    except Exception as e:
+                        self.logger.error(f"MetaLabeler retraining failed: {e}")
+                        self.telegram.alert(f"[RETRAIN FAILED] {e}", force=True)
 
                 # ── Degradation check + Reports (daily at target hour) ──
                 reports_cfg = self.config.get("monitoring", {}).get("telegram", {}).get("reports", {})

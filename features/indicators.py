@@ -115,9 +115,6 @@ class IndicatorCalculator:
         cross = pd.Series(0, index=macd_line.index)
         cross[(prev_diff < 0) & (curr_diff > 0)] = 1   # Bullish cross
         cross[(prev_diff > 0) & (curr_diff < 0)] = -1  # Bearish cross
-
-        prev_idx = cross.index[1:]
-        mask = (cross.loc[prev_idx] != 0) & (cross.iloc[:-1].values == 0)
         return cross
 
     @staticmethod

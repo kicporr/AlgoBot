@@ -137,7 +137,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _send_json(self, data):
         try:
-            response_body = json.dumps(data).encode('utf-8')
+            response_body = json.dumps(data, default=str).encode('utf-8')
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Access-Control-Allow-Origin', '*')
@@ -145,6 +145,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.wfile.write(response_body)
         except Exception as e:
             logger.error(f"Error serialization JSON: {e}")
+            # Try to identify the problematic key
+            if isinstance(data, dict):
+                for k, v in data.items():
+                    try:
+                        json.dumps({k: v})
+                    except Exception:
+                        logger.error(f"  Key '{k}' has non-serializable value (type={type(v).__name__})")
             self.send_error(500, "Internal Server Error")
 
     def _get_status(self, pipeline_name: str = "pure"):
@@ -284,6 +291,55 @@ class DashboardHandler(BaseHTTPRequestHandler):
         compat_proximity = proximity.get(first_symbol, {})
         compat_regime = regimes.get(first_symbol, {})
 
+        # Build regime diagnostics PER SYMBOL for the entry conditions panel
+        regime_diagnostics = {}
+        for sym in self.bot.symbols:
+            sym_state = pipeline.symbol_states.get(sym, {})
+            raw_features = sym_state.get("latest_features", {})
+            # Normalize: convert Series to dict if needed
+            if hasattr(raw_features, 'to_dict'):
+                sym_features = raw_features.to_dict()
+            elif hasattr(raw_features, 'items'):
+                sym_features = dict(raw_features)
+            else:
+                sym_features = {}
+            sym_prox = proximity.get(sym, {}).get("mtf_macd", {})
+            sym_regime = regimes.get(sym, {})
+
+            raw_regime = "unclear"
+            pending_regime = None
+            try:
+                rc = sym_state.get("regime_classifier")
+                if rc and hasattr(rc, '_regime_votes') and rc._regime_votes:
+                    last_vote = rc._regime_votes[-1].value if hasattr(rc._regime_votes[-1], 'value') else str(rc._regime_votes[-1])
+                    raw_regime = last_vote
+                    if last_vote != sym_regime.get("regime", ""):
+                        pending_regime = last_vote
+            except Exception:
+                pass
+
+            # Safe float getter (handles numpy types)
+            def _f(d, k, default=0.0):
+                v = d.get(k, default)
+                try: return float(v)
+                except: return float(default)
+
+            regime_diagnostics[sym] = {
+                "current": sym_regime.get("regime", "unclear"),
+                "raw": raw_regime,
+                "pending_switch": pending_regime,
+                "adx": round(_f(sym_features, "adx_14", 0), 1),
+                "di_ratio": round(_f(sym_features, "di_ratio", 0), 2),
+                "d1_trend": sym_prox.get("d1_trend", "FLAT"),
+                "volume_ratio": round(_f(sym_features, "volume_sma_ratio", 1.0), 2),
+                "volume_threshold": 1.2,
+                "rsi_14": round(_f(sym_features, "rsi_14", 50), 0),
+                "macd_cross": round(_f(sym_features, "macd_cross", 0), 0),
+            }
+
+        # Legacy single-value diagnostics (first symbol)
+        first_diag = regime_diagnostics.get(first_symbol, {})
+
         return {
             "pipeline": pipeline_name,
             "bot_name": self.bot.config.get("bot", {}).get("name", "bocik"),
@@ -316,13 +372,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
             "proximities": proximity,
             "regime": compat_regime,
             "regimes": regimes,
+            "regime_diagnostics": regime_diagnostics,  # Per-symbol dict
             "config": {
                 "risk": self.bot.config.get("risk", {}),
                 "strategies": self.bot.config.get("strategies", {}),
                 "meta_labeling": self.bot.config.get("meta_labeling", {}),
                 "telegram": {
-                    "chat_id": self.bot.config.get("TELEGRAM_CHAT_ID", ""),
-                    "bot_token": self.bot.config.get("TELEGRAM_BOT_TOKEN", ""),
+                    "chat_id": (self.bot.config.get("TELEGRAM_CHAT_ID", "") or "")[:4] + "****",
+                    "bot_token": (self.bot.config.get("TELEGRAM_BOT_TOKEN", "") or "")[:8] + "****",
                 }
             }
         }

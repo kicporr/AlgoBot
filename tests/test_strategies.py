@@ -109,6 +109,8 @@ class TestMTF_MACD:
 
         signal = strategy.on_candle(candle, features)
         assert signal == Signal.SHORT  # Close long
+        # in_position is now synced via on_position_closed(), not reset internally
+        strategy.on_position_closed()
         assert strategy.in_position is False
 
     def test_volume_filter_blocks_entry(self):
@@ -142,6 +144,7 @@ class TestMTF_MACD:
 
         signal = strategy.on_candle(candle, features)
         assert signal == Signal.SHORT  # Exit long
+        strategy.on_position_closed()
         assert strategy.in_position is False
 
     def test_d1_trend_update(self):

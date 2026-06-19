@@ -94,7 +94,7 @@ class MetaLabeler:
             return True  # Pass-through when model not ready
 
         try:
-            prob = self._predict(features)
+            prob = self._predict(features, signal)
             return prob >= self.min_confidence
         except Exception as e:
             logger.debug(f"MetaLabeler.evaluate error: {e} -- passing signal")
@@ -220,6 +220,7 @@ class MetaLabeler:
             with open(model_path, "rb") as f:
                 data = pickle.load(f)
             if data is None or not isinstance(data, dict):
+                logger.warning(f"Pre-trained model file exists but contains unexpected data (type={type(data).__name__})")
                 return
             self.model = data["model"]
             self._feature_names = data["feature_names"]
@@ -238,8 +239,12 @@ class MetaLabeler:
         except Exception as e:
             logger.warning(f"Failed to load pre-trained MetaLabeler: {e} — will train from live data")
 
-    def _predict(self, features: dict) -> float:
+    def _predict(self, features: dict, signal=None) -> float:
         """Predict probability that a signal will be profitable.
+
+        Args:
+            features: Feature dict from FeatureEngine.
+            signal: Optional Signal enum (LONG/SHORT) to set signal-type features.
 
         Returns probability in [0, 1]. Returns 0.5 on prediction failure.
         """
@@ -249,6 +254,12 @@ class MetaLabeler:
         try:
             # Build aligned feature row
             row = {k: features.get(k, 0.0) for k in self._feature_names}
+
+            # Inject signal-type features (must match training data)
+            if signal is not None and hasattr(signal, 'name'):
+                row["signal_is_long"] = 1.0 if signal.name == "LONG" else 0.0
+                row["signal_is_short"] = 1.0 if signal.name == "SHORT" else 0.0
+
             X = pd.DataFrame([row])
             X = X.replace([np.inf, -np.inf], np.nan).fillna(0)
 

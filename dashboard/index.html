@@ -203,20 +203,77 @@ body{overflow:hidden}
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-gutter">
             <div class="bg-surface-container-highest border border-surface-bright rounded-xl p-component-padding-md">
                 <h3 class="text-label-sm font-label-sm text-on-surface-variant uppercase mb-4 flex items-center gap-1 font-bold"><span class="material-symbols-outlined text-[16px]">show_chart</span> Sygnaly: MTF MACD Elder</h3>
-                <div class="space-y-4">
-                    <div class="flex justify-between items-center border-b border-surface-bright pb-2"><span class="text-body-md text-on-surface-variant">Trend D1 (Elder Filter)</span><span id="prox-macd-d1-trend" class="px-2 py-0.5 rounded text-label-sm font-bold bg-surface-variant text-on-surface-variant">-</span></div>
-                    <div class="space-y-1"><div class="flex justify-between text-body-md"><span class="text-on-surface-variant">MACD Histogram 1H</span><span id="prox-macd-hist-val" class="font-data-mono text-primary font-bold">0.00</span></div><div class="relative w-full h-4 bg-surface-container-lowest rounded overflow-hidden flex items-center"><div class="absolute left-1/2 w-0.5 h-full bg-outline-variant z-10"></div><div id="prox-macd-hist-bar" class="h-full bg-secondary transition-all duration-300" style="width:0%;margin-left:50%;"></div></div><div class="flex justify-between text-[11px] text-on-surface-variant font-data-mono"><span>SHORT</span><span>Neutralny</span><span>LONG</span></div></div>
-                    <div id="prox-macd-volume-container" class="space-y-1" style="display:none"><div class="flex justify-between text-body-md"><span class="text-on-surface-variant">Potwierdzenie wolumenu</span><span id="prox-macd-volume-val" class="font-data-mono font-bold">-</span></div><div class="w-full bg-surface-container-lowest rounded h-3 overflow-hidden"><div id="prox-macd-volume-bar" class="h-full bg-secondary-container transition-all duration-300" style="width:0%;"></div></div><div class="flex justify-between text-[11px] text-on-surface-variant font-data-mono"><span>Brak (&lt; 1.2x)</span><span id="prox-macd-volume-target" class="text-primary font-bold">Próg: 1.2x</span></div></div>
+                <div class="space-y-3">
+                    <!-- D1 Trend -->
+                    <div>
+                        <div class="flex justify-between items-center mb-1"><span class="text-body-md text-on-surface-variant">Trend D1 (Elder)</span><span id="prox-macd-d1-trend" class="px-2 py-0.5 rounded text-label-sm font-bold bg-surface-variant text-on-surface-variant">-</span></div>
+                        <p class="text-[10px] text-on-surface-variant/60">Filtr dzienny — tylko LONG gdy D1 UP, SHORT gdy D1 DOWN</p>
+                    </div>
+                    <!-- MACD Histogram -->
+                    <div class="space-y-1 border-t border-surface-bright pt-2">
+                        <div class="flex justify-between text-body-md"><span class="text-on-surface-variant">MACD Histogram 1H</span><span id="prox-macd-hist-val" class="font-data-mono text-primary font-bold">0.00</span></div>
+                        <div class="relative w-full h-4 bg-surface-container-lowest rounded overflow-hidden flex items-center">
+                            <div class="absolute left-1/2 w-0.5 h-full bg-outline-variant z-10"></div>
+                            <div id="prox-macd-hist-bar" class="h-full bg-secondary transition-all duration-300" style="width:0%;margin-left:50%;"></div>
+                        </div>
+                        <div class="flex justify-between text-[11px] text-on-surface-variant font-data-mono"><span>SHORT</span><span>Neutralny</span><span>LONG</span></div>
+                        <p class="text-[10px] text-on-surface-variant/60">Przecięcie linii = sygnał. Dodatni histogram = momentum LONG</p>
+                    </div>
+                    <!-- Volume -->
+                    <div id="prox-macd-volume-container" class="space-y-1 border-t border-surface-bright pt-2" style="display:none">
+                        <div class="flex justify-between text-body-md"><span class="text-on-surface-variant">Potwierdzenie wolumenu</span><span id="prox-macd-volume-val" class="font-data-mono font-bold">-</span></div>
+                        <div class="w-full bg-surface-container-lowest rounded h-3 overflow-hidden"><div id="prox-macd-volume-bar" class="h-full bg-secondary-container transition-all duration-300" style="width:0%;"></div></div>
+                        <div class="flex justify-between text-[11px] text-on-surface-variant font-data-mono"><span>Brak (&lt;1.2x)</span><span id="prox-macd-volume-target" class="text-primary font-bold">Próg: 1.2x</span></div>
+                        <p class="text-[10px] text-on-surface-variant/60">Wolumen &gt;1.2x średniej = silny sygnał</p>
+                    </div>
                 </div>
             </div>
             <div class="bg-surface-container-highest border border-surface-bright rounded-xl p-component-padding-md">
                 <h3 class="text-label-sm font-label-sm text-on-surface-variant uppercase mb-4 flex items-center gap-1 font-bold"><span class="material-symbols-outlined text-[16px]">rule</span> Warunki Wejscia</h3>
-                <div class="space-y-3 pt-1">
-                    <div class="flex justify-between items-center border-b border-surface-bright pb-2"><span class="text-body-md text-on-surface-variant">Bezpiecznik Systemowy</span><div id="checklist-cb" class="flex items-center gap-1.5 font-bold"><span class="material-symbols-outlined text-[16px] text-error">cancel</span><span class="text-error text-label-sm">ZABLOKOWANY</span></div></div>
-                    <div class="flex justify-between items-center border-b border-surface-bright pb-2"><span class="text-body-md text-on-surface-variant">Rezim Rynkowy</span><div id="checklist-regime" class="flex items-center gap-1.5 font-bold"><span class="material-symbols-outlined text-[16px] text-error">cancel</span><span class="text-error text-label-sm">BRAK TRENDU</span></div></div>
-                    <div class="flex justify-between items-center border-b border-surface-bright pb-2"><span class="text-body-md text-on-surface-variant">Dobowy Filtr Elder D1</span><div id="checklist-d1" class="flex items-center gap-1.5 font-bold"><span class="material-symbols-outlined text-[16px] text-error">cancel</span><span class="text-error text-label-sm">PLASKI (FLAT)</span></div></div>
-                    <div class="flex justify-between items-center border-b border-surface-bright pb-2"><span class="text-body-md text-on-surface-variant">Potwierdzenie Wolumenu</span><div id="checklist-volume" class="flex items-center gap-1.5 font-bold"><span class="material-symbols-outlined text-[16px] text-error">cancel</span><span class="text-error text-label-sm">NIEPOTWIERDZONY</span></div></div>
-                    <div class="flex justify-between items-center pt-2"><span class="text-body-md font-semibold text-on-surface">Status Decyzyjny</span><span id="checklist-decision" class="px-2 py-0.5 rounded text-label-sm font-bold bg-surface-variant text-on-surface-variant">OCZEKIWANIE NA SYGNAL</span></div>
+                <div class="space-y-2 pt-1">
+                    <!-- Regime Badge -->
+                    <div class="flex justify-between items-center border-b border-surface-bright pb-2 mb-2">
+                        <span class="text-body-md text-on-surface-variant">Rezim</span>
+                        <span id="checklist-regime-badge" class="px-2 py-0.5 rounded text-label-sm font-bold bg-surface-variant text-on-surface-variant">-</span>
+                    </div>
+                    <!-- ADX gauge -->
+                    <div class="space-y-0.5">
+                        <div class="flex justify-between text-[12px]"><span class="text-on-surface-variant">ADX (Trend)</span><span id="checklist-adx-val" class="font-data-mono text-on-surface">-</span></div>
+                        <div class="w-full h-1.5 bg-surface-container-lowest rounded overflow-hidden"><div id="checklist-adx-bar" class="h-full bg-primary transition-all" style="width:0%"></div></div>
+                        <div class="flex justify-between text-[10px] text-on-surface-variant"><span>0</span><span>Trend >25</span></div>
+                    </div>
+                    <!-- DI Ratio -->
+                    <div class="space-y-0.5">
+                        <div class="flex justify-between text-[12px]"><span class="text-on-surface-variant">DI+/DI- Ratio</span><span id="checklist-di-val" class="font-data-mono text-on-surface">-</span></div>
+                        <div class="w-full h-1.5 bg-surface-container-lowest rounded overflow-hidden"><div id="checklist-di-bar" class="h-full bg-primary transition-all" style="width:0%"></div></div>
+                        <div class="flex justify-between text-[10px] text-on-surface-variant"><span>Short &lt;0.77</span><span>Long &gt;1.3</span></div>
+                    </div>
+                    <!-- D1 Elder Filter -->
+                    <div class="flex justify-between items-center border-b border-surface-bright py-1">
+                        <span class="text-[12px] text-on-surface-variant">D1 Elder Filter</span>
+                        <div id="checklist-d1" class="flex items-center gap-1 font-bold"><span class="text-[11px]">-</span></div>
+                    </div>
+                    <!-- Volume -->
+                    <div class="space-y-0.5">
+                        <div class="flex justify-between text-[12px]"><span class="text-on-surface-variant">Wolumen (vs SMA)</span><span id="checklist-vol-val" class="font-data-mono text-on-surface">-</span></div>
+                        <div class="w-full h-1.5 bg-surface-container-lowest rounded overflow-hidden"><div id="checklist-vol-bar" class="h-full bg-secondary transition-all" style="width:0%"></div></div>
+                        <div class="flex justify-between text-[10px] text-on-surface-variant"><span>0x</span><span>Próg: 1.2x</span></div>
+                    </div>
+                    <!-- RSI / MACD cross -->
+                    <div class="flex justify-between items-center border-b border-surface-bright py-1">
+                        <span class="text-[12px] text-on-surface-variant">RSI / MACD Cross</span>
+                        <span id="checklist-rsi-val" class="font-data-mono text-[11px] text-on-surface">-</span>
+                    </div>
+                    <!-- CB Status -->
+                    <div class="flex justify-between items-center border-b border-surface-bright py-1">
+                        <span class="text-[12px] text-on-surface-variant">Bezpiecznik</span>
+                        <div id="checklist-cb" class="flex items-center gap-1"><span class="text-[11px]">-</span></div>
+                    </div>
+                    <!-- Decision Status -->
+                    <div class="flex justify-between items-center pt-1">
+                        <span class="text-body-md font-semibold text-on-surface">Status</span>
+                        <span id="checklist-decision" class="px-2 py-0.5 rounded text-label-sm font-bold bg-surface-variant text-on-surface-variant">-</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -232,6 +289,12 @@ body{overflow:hidden}
         </div>
         <div class="bg-surface-container-highest border border-surface-bright rounded-xl p-component-padding-md">
             <h3 class="text-label-sm font-label-sm text-on-surface-variant uppercase mb-3 flex items-center gap-1 font-bold"><span class="material-symbols-outlined text-[16px]">grid_on</span> Mapa Sygnalow</h3>
+            <div class="flex items-center gap-4 mb-3 text-[11px]">
+                <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-secondary/80 border border-secondary inline-block"></span> BULLISH</span>
+                <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-error/70 border border-error inline-block"></span> BEARISH</span>
+                <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm bg-surface-variant/40 border border-outline-variant inline-block"></span> NEUTRAL</span>
+            </div>
+            <p class="text-[10px] text-on-surface-variant/60 mb-2">Kolumny: MACD 1H = przecięcie sygnału | D1 = filtr dzienny | Wolumen = potwierdzenie | Reżim = TRENDING? | Overall = suma (≥2=zielony)</p>
             <div id="signal-heatmap" class="overflow-x-auto"></div>
         </div>
         <div class="bg-surface-container-highest border border-surface-bright rounded-xl h-80 flex flex-col">
@@ -788,18 +851,69 @@ function updateStatusUI(data){
                 document.getElementById("prox-macd-volume-target").textContent="Próg: "+pm.volume_mult+"x";
             }else{vc.style.display="none";}
         }
-        // Checklist
-        const cb_ok=(data.circuit_breaker||{}).state==="NORMAL"&&!(data.circuit_breaker||{}).manual_halted;
-        const regimeOk=((data.regime||{}).regime||"").toLowerCase()==="trending";
-        const d1Ok=pm?.d1_trend==="UP"||pm?.d1_trend==="DOWN";
-        const volOk=pm?.volume_sma_ratio>=pm?.volume_mult;
-        updateChecklist("checklist-cb",cb_ok,cb_ok?"BEZPIECZNIK OTWARTY":"ZABLOKOWANY");
-        updateChecklist("checklist-regime",regimeOk,regimeOk?"TREND":"BRAK TRENDU");
-        updateChecklist("checklist-d1",d1Ok,d1Ok?"TREND":"PŁASKI");
-        updateChecklist("checklist-volume",volOk,volOk?"POTWIERDZONY":"NIEPOTWIERDZONY");
-        const decisionEl=document.getElementById("checklist-decision");
-        if(cb_ok&&regimeOk&&d1Ok&&volOk){decisionEl.className="px-2 py-0.5 rounded text-label-sm font-bold bg-secondary/20 text-secondary border border-secondary/30";decisionEl.textContent="GOTOWY DO WEJŚCIA";}
-        else{decisionEl.className="px-2 py-0.5 rounded text-label-sm font-bold bg-surface-variant text-on-surface-variant";decisionEl.textContent="OCZEKIWANIE NA SYGNAŁ";}
+        // ── Entry Conditions Panel (per-symbol regime diagnostics) ──
+        const allDiag = data.regime_diagnostics || {};
+        const currentSym = window.currentProxSymbol || Object.keys(allDiag)[0] || "";
+        const rd = allDiag[currentSym] || {};
+
+        // Regime badge (with pending switch indicator)
+        const regimeEl = document.getElementById("checklist-regime-badge");
+        if (regimeEl && rd.current) {
+            const r = rd.current.toLowerCase();
+            const colors = {trending: "bg-secondary/20 text-secondary border border-secondary/30",
+                           ranging: "bg-primary/20 text-primary border border-primary/30",
+                           volatile: "bg-error/20 text-error border border-error/30",
+                           unclear: "bg-surface-variant text-on-surface-variant border border-outline-variant"};
+            regimeEl.className = "px-2 py-0.5 rounded text-label-sm font-bold " + (colors[r] || colors.unclear);
+            let txt = rd.current.toUpperCase();
+            if (rd.pending_switch) txt += " → " + rd.pending_switch.toUpperCase() + "?";
+            regimeEl.textContent = txt;
+        }
+
+        // ADX gauge
+        const adx = rd.adx || 0;
+        const adxPct = Math.min(100, (adx / 40) * 100);
+        setBar("checklist-adx-bar", adxPct, adx >= 25 ? "bg-secondary" : "bg-primary");
+        setText("checklist-adx-val", adx.toFixed(1) + (adx >= 25 ? " TRENDING" : ""));
+
+        // DI Ratio gauge (normalize: 0.5-2.0 range -> 0-100%)
+        const di = rd.di_ratio || 1.0;
+        const diPct = Math.min(100, Math.max(0, ((di - 0.5) / 1.5) * 100));
+        setBar("checklist-di-bar", diPct, (di >= 1.3 || di <= 0.77) ? "bg-secondary" : "bg-primary");
+        setText("checklist-di-val", di.toFixed(2) + (di >= 1.3 ? " LONG" : di <= 0.77 ? " SHORT" : ""));
+
+        // D1 Elder
+        const d1Ok = rd.d1_trend === "UP" || rd.d1_trend === "DOWN";
+        updateChecklist("checklist-d1", d1Ok, d1Ok ? "TREND " + rd.d1_trend : "PLASKI (FLAT)");
+
+        // Volume gauge
+        const volR = rd.volume_ratio || 0;
+        const volPct = Math.min(100, (volR / 2.0) * 100);
+        setBar("checklist-vol-bar", volPct, volR >= 1.2 ? "bg-secondary" : "bg-primary-container");
+        setText("checklist-vol-val", volR.toFixed(2) + "x" + (volR >= 1.2 ? " OK" : ""));
+
+        // RSI / MACD cross
+        const rsi = rd.rsi_14 || 50;
+        const cross = rd.macd_cross || 0;
+        const crossText = cross === 1 ? "LONG CROSS" : cross === -1 ? "SHORT CROSS" : "FLAT";
+        setText("checklist-rsi-val", "RSI " + rsi + " | MACD " + crossText);
+
+        // CB status
+        const cb = data.circuit_breaker || {};
+        const cbOk = cb.state === "NORMAL" && !cb.manual_halted;
+        updateChecklist("checklist-cb", cbOk, cbOk ? "OTWARTY" : "ZABLOKOWANY");
+
+        // Decision
+        const regimeOk = rd.current === "trending";
+        const allOk = cbOk && regimeOk && d1Ok && (volR >= 1.2);
+        const decEl = document.getElementById("checklist-decision");
+        if (decEl) {
+            if (!cbOk) { decEl.className = "px-2 py-0.5 rounded text-label-sm font-bold bg-error/20 text-error border border-error/30"; decEl.textContent = "BEZPIECZNIK"; }
+            else if (!regimeOk) { decEl.className = "px-2 py-0.5 rounded text-label-sm font-bold bg-surface-variant text-on-surface-variant"; decEl.textContent = "CZEKA NA TREND"; }
+            else if (!d1Ok) { decEl.className = "px-2 py-0.5 rounded text-label-sm font-bold bg-surface-variant text-on-surface-variant"; decEl.textContent = "D1 PLASKI"; }
+            else if (volR < 1.2) { decEl.className = "px-2 py-0.5 rounded text-label-sm font-bold bg-surface-variant text-on-surface-variant"; decEl.textContent = "SLABY WOLUMEN"; }
+            else { decEl.className = "px-2 py-0.5 rounded text-label-sm font-bold bg-secondary/20 text-secondary border border-secondary/30"; decEl.textContent = "GOTOWY DO WEJSCIA"; }
+        }
     }
 
     // Weather & Bar Race & Heatmap
@@ -960,23 +1074,28 @@ function renderHeatmap(proximities,regimes){
     const c=document.getElementById("signal-heatmap");if(!c)return;
     const syms=Object.keys(proximities);if(!syms.length){c.innerHTML='<div class="text-on-surface-variant text-center py-4">Brak danych</div>';return;}
     const cats=[
-        {key:"macd",label:"MACD 1H",get:p=>p.mtf_macd?.macd_cross||0},
-        {key:"d1",label:"Trend D1",get:p=>{const t=p.mtf_macd?.d1_trend;return t==="UP"?1:t==="DOWN"?-1:0;}},
-        {key:"volume",label:"Wolumen",get:p=>{const r=p.mtf_macd?.volume_sma_ratio||1;const m=p.mtf_macd?.volume_mult||1.2;return r>=m?1:r>=m*0.8?0:-1;}},
-        {key:"regime",label:"Reżim",get:(p,s)=>{const r=(regimes[s]?.regime||"").toLowerCase();return r==="trending"?1:r==="ranging"?0:-1;}},
-        {key:"overall",label:"Overall",get:(p,s)=>{const sum=(p.mtf_macd?.macd_cross||0)+((p.mtf_macd?.d1_trend==="UP"?1:p.mtf_macd?.d1_trend==="DOWN"?-1:0))+((p.mtf_macd?.volume_sma_ratio||1)>=(p.mtf_macd?.volume_mult||1.2)?1:0)+(((regimes[s]?.regime||"").toLowerCase()==="trending")?1:0);return sum>=2?1:sum<=-2?-1:0;}}
+        {key:"macd",label:"MACD 1H",get:p=>p.mtf_macd?.macd_cross||0,
+         detail:p=>(p.mtf_macd?.macd_cross||0)===1?"LONG cross":(p.mtf_macd?.macd_cross||0)===-1?"SHORT cross":"FLAT"},
+        {key:"d1",label:"Trend D1",get:p=>{const t=p.mtf_macd?.d1_trend;return t==="UP"?1:t==="DOWN"?-1:0;},
+         detail:p=>"D1: "+(p.mtf_macd?.d1_trend||"FLAT")},
+        {key:"volume",label:"Wolumen",get:p=>{const r=p.mtf_macd?.volume_sma_ratio||1;const m=p.mtf_macd?.volume_mult||1.2;return r>=m?1:r>=m*0.8?0:-1;},
+         detail:p=>((p.mtf_macd?.volume_sma_ratio||1).toFixed(2)+"x / "+(p.mtf_macd?.volume_mult||1.2).toFixed(1)+"x")},
+        {key:"regime",label:"Reżim",get:(p,s)=>{const r=(regimes[s]?.regime||"").toLowerCase();return r==="trending"?1:r==="ranging"?0:-1;},
+         detail:(p,s)=>"Reżim: "+(regimes[s]?.regime||"?")},
+        {key:"overall",label:"Sygnał",get:(p,s)=>{const sum=(p.mtf_macd?.macd_cross||0)+((p.mtf_macd?.d1_trend==="UP"?1:p.mtf_macd?.d1_trend==="DOWN"?-1:0))+((p.mtf_macd?.volume_sma_ratio||1)>=(p.mtf_macd?.volume_mult||1.2)?1:0)+(((regimes[s]?.regime||"").toLowerCase()==="trending")?1:0);return sum>=2?1:sum<=-2?-1:0;},
+         detail:(p,s)=>"Gotowy: "+(cats[4].get(p,s)>0?"LONG":cats[4].get(p,s)<0?"SHORT":"FLAT")},
     ];
     const cellColor=v=>v>0?"bg-secondary/80 border-secondary":v<0?"bg-error/70 border-error":"bg-surface-variant/40 border-outline-variant";
     const cellIcon=v=>v>0?"▲":v<0?"▼":"─";
     let h='<table class="w-full text-center text-[11px] font-data-mono"><thead><tr><th class="px-2 py-2 text-left text-on-surface-variant font-label-sm uppercase">Symbol</th>';
-    cats.forEach(c=>h+='<th class="px-2 py-2 text-on-surface-variant font-label-sm uppercase">'+c.label+'</th>');
+    cats.forEach(c=>h+='<th class="px-2 py-2 text-on-surface-variant font-label-sm uppercase" title="'+c.key+'">'+c.label+'</th>');
     h+='</tr></thead><tbody>';
     syms.forEach(sym=>{
         const p=proximities[sym];if(!p)return;
         h+='<tr><td class="px-2 py-2 text-left font-bold text-on-surface">'+sym.split("/")[0]+'</td>';
         cats.forEach(c=>{
             const v=c.get(p,sym);
-            h+='<td class="px-1 py-1"><div class="heatmap-cell w-8 h-8 rounded-md border '+cellColor(v)+' flex items-center justify-center mx-auto text-xs font-bold">'+cellIcon(v)+'<div class="heatmap-tooltip">'+c.label+": "+(v>0?"BULLISH":v<0?"BEARISH":"NEUTRAL")+'</div></div></td>';
+            h+='<td class="px-1 py-1"><div class="heatmap-cell w-8 h-8 rounded-md border '+cellColor(v)+' flex items-center justify-center mx-auto text-xs font-bold">'+cellIcon(v)+'<div class="heatmap-tooltip">'+c.detail(p,sym)+'</div></div></td>';
         });
         h+='</tr>';
     });
@@ -1463,6 +1582,7 @@ async function exportData(fmt){
 
 // ── Helpers ───────────────────────────────────────────────────
 function setText(id,text){const el=document.getElementById(id);if(el)el.textContent=text;}
+function setBar(id,pct,cls){const el=document.getElementById(id);if(el){el.style.width=pct+"%";if(cls)el.className="h-full transition-all "+cls;}}
 function setVal(id,val){const el=document.getElementById(id);if(el)el.value=val;}
 
 // ── Particle Network Background ───────────────────────────────

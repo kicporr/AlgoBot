@@ -40,7 +40,6 @@ class MTF_MACD_Elder(BaseStrategy):
 
         # Elder filter
         filter_cfg = cfg.get("elder_filter", {})
-        self.require_bb_squeeze = filter_cfg.get("require_bb_squeeze", False)
         self.require_volume = filter_cfg.get("require_volume_confirm", True)
         self.volume_mult = filter_cfg.get("volume_mult", 1.2)
         self.allow_shorts = filter_cfg.get("allow_shorts", True)
@@ -77,8 +76,12 @@ class MTF_MACD_Elder(BaseStrategy):
                 self._update_d1_trend()
 
     def _update_d1_trend(self):
-        """Recalculate D1 MACD from cached closes."""
-        # Prune to prevent unbounded growth (~10 years = 3650 entries, keep 500)
+        """Recalculate D1 MACD and set Elder trend filter.
+
+        Elder Triple Screen: Only take longs when D1 MACD > D1 Signal (bullish),
+        only take shorts when D1 MACD < D1 Signal (bearish).
+        """
+        # Prune to prevent unbounded growth
         max_d1_cache = 500
         if len(self._d1_closes) > max_d1_cache:
             self._d1_closes = self._d1_closes[-max_d1_cache:]
@@ -90,15 +93,11 @@ class MTF_MACD_Elder(BaseStrategy):
         self.d1_macd = macd_line.iloc[-1]
         self.d1_signal = signal_line.iloc[-1]
 
-        if len(histogram) >= 2:
-            prev_hist = histogram.iloc[-2]
-            curr_hist = histogram.iloc[-1]
-            if curr_hist > prev_hist:
-                self.d1_trend = "UP"
-            elif curr_hist < prev_hist:
-                self.d1_trend = "DOWN"
-            else:
-                self.d1_trend = "FLAT"
+        # Elder filter: MACD position relative to signal line (not histogram direction)
+        if self.d1_macd > self.d1_signal:
+            self.d1_trend = "UP"
+        elif self.d1_macd < self.d1_signal:
+            self.d1_trend = "DOWN"
         else:
             self.d1_trend = "FLAT"
 
@@ -144,8 +143,10 @@ class MTF_MACD_Elder(BaseStrategy):
                 macd_cross, macd_hist, close, candle
             )
             if exit_signal != Signal.FLAT:
-                self.in_position = False
-                self.position_side = ""
+                # NOTE: Do NOT reset in_position here. The orchestrator may
+                # block the close (min_hold_bars, cooldown, etc.). The state
+                # is synced via on_position_closed() when the orchestrator
+                # actually closes the position.
                 return exit_signal
 
             # Update trailing stop levels
