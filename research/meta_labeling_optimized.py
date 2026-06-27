@@ -147,7 +147,8 @@ def resample_1h_to_1d(df_1h):
     daily = df.resample("1D").agg({"open": "first", "high": "max", "low": "min",
                                     "close": "last", "volume": "sum"}).dropna()
     daily = daily.reset_index()
-    daily["timestamp"] = daily["dt"].astype("int64") // 1_000_000
+    # datetime64[ms] internal representation is already in ms — no division needed
+    daily["timestamp"] = daily["dt"].astype("int64")
     return daily.drop(columns=["dt"])
 
 
