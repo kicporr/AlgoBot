@@ -67,6 +67,7 @@ class CircuitBreaker:
         self.manual_halted: bool = False
         self.halt_reason: str = ""
         self.halt_timestamp: Optional[datetime] = None
+        self._warning_bars_remaining: int = 0  # Countdown for WARNING state persistence
 
     def check(
         self,
@@ -104,9 +105,14 @@ class CircuitBreaker:
             self.hourly_trade_count = 0
             self.last_hour = this_hour
 
-        # ── Clear warning after one bar ───────────────────────
+        # ── Clear warning after countdown expires ────────────
         if self.state == BreakerState.WARNING:
-            self.state = BreakerState.NORMAL
+            self._warning_bars_remaining -= 1
+            if self._warning_bars_remaining <= 0:
+                self.state = BreakerState.NORMAL
+                self._warning_bars_remaining = 0
+            else:
+                return (BreakerState.WARNING, f"Warning active ({self._warning_bars_remaining} checks remaining)")
 
         # ── Check pause-until ─────────────────────────────────
         if self.pause_until_ts > 0 and now < self.pause_until_ts:
@@ -142,6 +148,9 @@ class CircuitBreaker:
             return self._halt(self.halt_reason)
         if self.consecutive_losses >= self.consecutive_warn:
             self.state = BreakerState.WARNING
+            # Set counter to number of symbols so WARNING persists for one full candle cycle
+            # (check() is called once per symbol per candle)
+            self._warning_bars_remaining = max(1, self._warning_bars_remaining)
             return (BreakerState.WARNING, f"Warning: {self.consecutive_losses} consecutive losses")
 
         # ── 5. Volatility Spike ───────────────────────────────

@@ -94,6 +94,7 @@ class BitgetWSClient:
         self._ws: Optional[websocket.WebSocketApp] = None
         self._ws_thread: Optional[threading.Thread] = None
         self._consumer_thread: Optional[threading.Thread] = None
+        self._ping_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
         self._lock = threading.Lock()
 
@@ -211,6 +212,12 @@ class BitgetWSClient:
         self._state = WSState.CONNECTED
         self._reconnect_delay = self.reconnect_min_delay
 
+        # Start keepalive ping thread
+        self._ping_thread = threading.Thread(
+            target=self._ping_loop, args=(ws,), name=f"bocik-ws-ping-{self.symbol_id}", daemon=True
+        )
+        self._ping_thread.start()
+
         ex_cfg = self.config.get("exchange", {})
         inst_type = ex_cfg.get("ws_inst_type", "SPOT")
 
@@ -229,6 +236,18 @@ class BitgetWSClient:
         # Backfill missed candles after reconnect
         if self.rest_client and self.last_candle_ts > 0 and self.reconnect_count > 0:
             self._backfill_missed()
+
+    def _ping_loop(self, ws):
+        logger.debug(f"WS ping thread started for {self.symbol_id}")
+        while not self._stop_event.is_set() and self._state == WSState.CONNECTED:
+            try:
+                ws.send("ping")
+                logger.debug(f"Sent WS text ping for {self.symbol_id}")
+            except Exception as e:
+                logger.warning(f"Failed to send WS text ping for {self.symbol_id}: {e}")
+                break
+            # Wait 25 seconds (Bitget recommends 30 seconds keepalive)
+            self._stop_event.wait(25)
 
     def _on_message(self, ws, message: str):
         """Parse Bitget WS message."""

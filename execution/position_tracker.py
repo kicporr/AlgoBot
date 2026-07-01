@@ -83,7 +83,7 @@ class PositionTracker:
             p.unrealized_pnl = (p.entry_price - close) * p.quantity
             
         self.bars_held += 1
-        
+
         if p.side == "long":
             # 1. Take Profit check
             if high >= p.take_profit:

@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Optional
+from typing import Optional, Union
 import pandas as pd
 
 
@@ -19,7 +19,7 @@ class BaseStrategy(ABC):
         self.config = config
     
     @abstractmethod
-    def on_candle(self, candle: dict, features: pd.Series) -> Signal:
+    def on_candle(self, candle: dict, features: dict) -> Signal:
         """Called every primary timeframe candle close. Returns trading signal."""
         ...
     

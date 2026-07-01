@@ -18,6 +18,7 @@ Lifecycle:
 import os
 import time
 import yaml
+import threading
 from pathlib import Path
 from typing import Optional
 from dotenv import load_dotenv
@@ -265,6 +266,7 @@ class TradingBot:
         self.paper_trading = self.config.get("bot", {}).get("mode", "paper") == "paper"
         self.dashboard_server = None
         self.scheduler_thread = None
+        self._pipeline_lock = threading.Lock()  # Protects _active_pipeline switching
 
         # Priming tracking (set here for safety; filled in start())
         self._priming_success: dict[str, bool] = {}
@@ -546,13 +548,14 @@ class TradingBot:
     
     def _on_1h_candle_dual(self, symbol: str, candle: dict):
         """Fan out 1H candle to both pipelines for independent trading."""
-        for pipe_name, pipeline in self.pipelines.items():
-            self._active_pipeline = pipeline
-            try:
-                self._on_1h_candle(symbol, candle)
-            except Exception as e:
-                self.logger.error(f"[{pipe_name}] {symbol} handler error: {e}", exc_info=True)
-        self._active_pipeline = self.pipelines["pure"]  # Reset to default
+        with self._pipeline_lock:
+            for pipe_name, pipeline in self.pipelines.items():
+                self._active_pipeline = pipeline
+                try:
+                    self._on_1h_candle(symbol, candle)
+                except Exception as e:
+                    self.logger.error(f"[{pipe_name}] {symbol} handler error: {e}", exc_info=True)
+            self._active_pipeline = self.pipelines["pure"]  # Reset to default
 
     def _on_1h_candle(self, symbol: str, candle: dict):
         """Main trading logic — called when a new 1H candle completes.
@@ -851,31 +854,36 @@ class TradingBot:
     
     def _on_4h_candle_dual(self, symbol: str, candle: dict):
         """Fan out 4H candle to both pipelines for regime updates."""
-        for pipeline in self.pipelines.values():
-            self._active_pipeline = pipeline
-            try:
-                self._on_4h_candle(symbol, candle)
-            except Exception as e:
-                self.logger.error(f"[{pipeline.name}] 4H handler error: {e}", exc_info=True)
-        self._active_pipeline = self.pipelines["pure"]
+        with self._pipeline_lock:
+            for pipeline in self.pipelines.values():
+                self._active_pipeline = pipeline
+                try:
+                    self._on_4h_candle(symbol, candle)
+                except Exception as e:
+                    self.logger.error(f"[{pipeline.name}] 4H handler error: {e}", exc_info=True)
+            self._active_pipeline = self.pipelines["pure"]
 
     def _on_1d_candle_dual(self, symbol: str, candle: dict):
         """Fan out 1D candle to both pipelines for D1 trend updates."""
-        for pipeline in self.pipelines.values():
-            self._active_pipeline = pipeline
-            try:
-                self._on_1d_candle(symbol, candle)
-            except Exception as e:
-                self.logger.error(f"[{pipeline.name}] 1D handler error: {e}", exc_info=True)
-        self._active_pipeline = self.pipelines["pure"]
+        with self._pipeline_lock:
+            for pipeline in self.pipelines.values():
+                self._active_pipeline = pipeline
+                try:
+                    self._on_1d_candle(symbol, candle)
+                except Exception as e:
+                    self.logger.error(f"[{pipeline.name}] 1D handler error: {e}", exc_info=True)
+            self._active_pipeline = self.pipelines["pure"]
 
     def _on_4h_candle(self, symbol: str, candle: dict):
-        """Called when a new 4H candle completes — reassess market regime."""
+        """Called when a new 4H candle completes — feed to feature engine and reassess market regime."""
         try:
             state = self.symbol_states[symbol]
+            # Feed 4H candle to feature engine cache for multi-TF features
+            state["feature_engine"]._append_to_cache("4h", candle)
             features = state["latest_features"]
             if features:
-                regime = state["regime_classifier"].current_regime
+                # Actively classify regime on 4H boundary (not just log)
+                regime = state["regime_classifier"].classify(features)
                 self.logger.info(
                     f"[{symbol}] 4H Regime: {regime.value.upper()} | "
                     f"ADX={features.get('adx_14',0):.1f} | "
@@ -890,6 +898,8 @@ class TradingBot:
         try:
             self.logger.info(f"📅 [{symbol}] 1D candle completed: close={candle['close']}. Updating MTF MACD Elder D1 trend...")
             state = self.symbol_states[symbol]
+            # Feed 1D candle to feature engine cache for multi-TF features
+            state["feature_engine"]._append_to_cache("1d", candle)
             mtf_macd = state["strategies"].get("mtf_macd")
             if mtf_macd:
                 mtf_macd.on_higher_tf_candle(candle, "1d")
@@ -945,7 +955,6 @@ class TradingBot:
                 # Restore state on failure
                 state["open_positions"][side] = pos
                 self.open_positions[f"{symbol}:{side}"] = pos
-                self.open_positions[side] = pos
                 return
 
             exit_price = order_res["average"]
@@ -1386,7 +1395,7 @@ class TradingBot:
                             last_sent_date = today_str
             except Exception as e:
                 self.logger.error(f"Error in periodic report scheduler loop: {e}", exc_info=True)
-                
+
             time.sleep(30)
 
     def _send_periodic_report(self, interval: str):

@@ -109,7 +109,7 @@ class MTF_MACD_Elder(BaseStrategy):
 
     # ─── 1H Signal Generation ──────────────────────────────────
 
-    def on_candle(self, candle: dict, features: pd.Series) -> Signal:
+    def on_candle(self, candle: dict, features: dict) -> Signal:
         """Generate signal for a 1H candle.
 
         Uses pre-computed features from the FeatureEngine.

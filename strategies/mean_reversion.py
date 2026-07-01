@@ -50,7 +50,7 @@ class MeanReversion(BaseStrategy):
     def name(self) -> str:
         return "MeanReversion"
 
-    def on_candle(self, candle: dict, features: pd.Series) -> Signal:
+    def on_candle(self, candle: dict, features: dict) -> Signal:
         """Generate signal on oversold/overbought conditions.
 
         Uses feature names from FeatureEngine:

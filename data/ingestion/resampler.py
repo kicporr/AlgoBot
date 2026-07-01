@@ -59,6 +59,7 @@ class CandleBuilder:
     bar_count: int = 0
     first_ts: int = 0
     last_ts: int = 0
+    min_bars: Optional[int] = None
     
     def is_empty(self) -> bool:
         return self.bar_count == 0
@@ -82,10 +83,11 @@ class CandleBuilder:
     def build(self) -> Optional[dict]:
         """Build the final candle, or None if not enough bars."""
         timeframe = self.timeframe
-        if self.bar_count < timeframe.min_bars:
+        target_min_bars = self.min_bars if self.min_bars is not None else timeframe.min_bars
+        if self.bar_count < target_min_bars:
             logger.debug(
                 f"Insufficient bars for {timeframe.value} candle: "
-                f"{self.bar_count}/{timeframe.min_bars} at ts={self.period_start}"
+                f"{self.bar_count}/{target_min_bars} at ts={self.period_start}"
             )
             return None
         
@@ -127,11 +129,13 @@ class OHLCVResampler:
         candles_1h = resampler.resample_bulk(df_1m, Timeframe.H1)
     """
     
-    def __init__(self):
+    def __init__(self, config: Optional[dict] = None):
+        cfg = config.get("data", {}).get("resampler", {}) if config else {}
+        
         self._builders: dict[Timeframe, CandleBuilder] = {
-            Timeframe.H1: CandleBuilder(Timeframe.H1),
-            Timeframe.H4: CandleBuilder(Timeframe.H4),
-            Timeframe.D1: CandleBuilder(Timeframe.D1),
+            Timeframe.H1: CandleBuilder(Timeframe.H1, min_bars=cfg.get("min_bars_1h")),
+            Timeframe.H4: CandleBuilder(Timeframe.H4, min_bars=cfg.get("min_bars_4h")),
+            Timeframe.D1: CandleBuilder(Timeframe.D1, min_bars=cfg.get("min_bars_1d")),
         }
         # Track which periods have been emitted (prevents double-emit)
         self._emitted_periods: dict[Timeframe, set[int]] = {
@@ -198,13 +202,14 @@ class OHLCVResampler:
     # ─── Bulk Mode (Backtesting) ────────────────────────────────
     
     @staticmethod
-    def resample_bulk(df_1m: pd.DataFrame, target_tf: Timeframe) -> pd.DataFrame:
+    def resample_bulk(df_1m: pd.DataFrame, target_tf: Timeframe, min_bars: Optional[int] = None) -> pd.DataFrame:
         """Resample a DataFrame of 1m candles to a higher timeframe.
         
         Args:
             df_1m: DataFrame with columns [timestamp, open, high, low, close, volume]
                    Timestamp must be in milliseconds.
             target_tf: Target timeframe (H1, H4, or D1).
+            min_bars: Optional custom minimum number of bars.
         
         Returns:
             DataFrame with resampled candles, timestamp as index.
@@ -240,7 +245,8 @@ class OHLCVResampler:
         resampled["bar_count"] = bar_counts
         
         # Filter out periods with too few bars
-        resampled = resampled[resampled["bar_count"] >= target_tf.min_bars]
+        target_min_bars = min_bars if min_bars is not None else target_tf.min_bars
+        resampled = resampled[resampled["bar_count"] >= target_min_bars]
         
         # Drop rows with NaN (incomplete periods at edges)
         resampled = resampled.dropna()

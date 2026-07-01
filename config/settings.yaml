@@ -68,6 +68,12 @@ data:
     max_price_jump_pct: 30   # Reject candles with >30% single-bar change
     timestamp_tolerance_s: 5 # Allow ±5s timestamp drift
 
+  # Resampler min bars override (allows up to 50% gap tolerance in live trading)
+  resampler:
+    min_bars_1h: 30
+    min_bars_4h: 120
+    min_bars_1d: 720
+
 # --- Features ---
 features:
   # Which feature groups to compute
