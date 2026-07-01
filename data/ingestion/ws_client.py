@@ -95,8 +95,10 @@ class BitgetWSClient:
         self._ws_thread: Optional[threading.Thread] = None
         self._consumer_thread: Optional[threading.Thread] = None
         self._ping_thread: Optional[threading.Thread] = None
+        self._watchdog_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
         self._lock = threading.Lock()
+        self._last_msg_time = time.time()
 
         # Candle completion tracking: {timeframe: last_seen_timestamp}
         self._last_seen: dict[str, int] = {"1m": 0, "1h": 0, "4h": 0, "1d": 0}
@@ -141,6 +143,12 @@ class BitgetWSClient:
         )
         self._ws_thread.start()
 
+        # Start watchdog thread
+        self._watchdog_thread = threading.Thread(
+            target=self._watchdog_loop, name=f"bocik-ws-watchdog-{self.symbol_id}", daemon=True
+        )
+        self._watchdog_thread.start()
+
         logger.info(f"Bitget WS client started (symbol={self.symbol_id})")
 
     def stop(self):
@@ -154,6 +162,8 @@ class BitgetWSClient:
             self._ws_thread.join(timeout=5.0)
         if self._consumer_thread and self._consumer_thread.is_alive():
             self._consumer_thread.join(timeout=5.0)
+        if self._watchdog_thread and self._watchdog_thread.is_alive():
+            self._watchdog_thread.join(timeout=5.0)
 
         flushed = self.resampler.flush()
         for tf, candle in flushed.items():
@@ -249,8 +259,31 @@ class BitgetWSClient:
             # Wait 25 seconds (Bitget recommends 30 seconds keepalive)
             self._stop_event.wait(25)
 
+    def _watchdog_loop(self):
+        logger.info("WebSocket watchdog thread started")
+        while not self._stop_event.is_set():
+            # Wait 10 seconds between checks
+            self._stop_event.wait(10)
+            if self._stop_event.is_set():
+                break
+
+            # If we are supposed to be connected but haven't received anything in 3 minutes
+            if self._state == WSState.CONNECTED:
+                elapsed = time.time() - self._last_msg_time
+                if elapsed > 180:  # 180 seconds = 3 minutes
+                    logger.warning(
+                        f"WS watchdog triggered for {self.symbol_id}! No messages received for {elapsed:.1f}s. "
+                        "Forcing WS disconnection to trigger reconnect..."
+                    )
+                    try:
+                        if self._ws:
+                            self._ws.close()
+                    except Exception as e:
+                        logger.error(f"Failed to close WS via watchdog: {e}")
+
     def _on_message(self, ws, message: str):
         """Parse Bitget WS message."""
+        self._last_msg_time = time.time()
         try:
             data = json.loads(message)
 
