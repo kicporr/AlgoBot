@@ -91,6 +91,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(self._get_events(qs.get("pipeline", None)))
         elif self.path == "/api/health":
             self._send_json(self._get_health())
+        elif self.path == "/api/metrics":
+            self._serve_metrics()
         else:
             self.send_error(404, "File Not Found")
 
@@ -1554,6 +1556,122 @@ class DashboardHandler(BaseHTTPRequestHandler):
             }
         except Exception:
             return {"status": "error"}
+
+    def _serve_metrics(self):
+        """GET /api/metrics — Prometheus text format metrics."""
+        try:
+            bot = self.bot
+            if not bot:
+                self.send_error(500)
+                return
+            import time as _t
+
+            lines = []
+
+            def metric(name, value, labels=None, help_text=""):
+                if help_text:
+                    lines.append(f"# HELP {name} {help_text}")
+                lines.append(f"# TYPE {name} gauge")
+                label_str = (
+                    "{"
+                    + ",".join(f'{k}="{v}"' for k, v in (labels or {}).items())
+                    + "}"
+                    if labels
+                    else ""
+                )
+                lines.append(f"{name}{label_str} {value}")
+
+            uptime = int(_t.time() - getattr(bot, "_start_time", _t.time()))
+
+            metric("bocik_uptime_seconds", uptime, help_text="Bot uptime in seconds")
+            metric(
+                "bocik_running",
+                1 if bot.running else 0,
+                help_text="Is the bot running (1=yes, 0=no)",
+            )
+
+            for name, p in bot.pipelines.items():
+                labels = {"pipeline": name}
+                metric("bocik_equity", round(p.equity, 2), labels, "Current equity")
+                metric("bocik_balance", round(p.balance, 2), labels, "Realized balance")
+                cb_state = 0
+                if hasattr(p, "circuit_breaker") and p.circuit_breaker:
+                    st = p.circuit_breaker.state
+                    cb_state = (
+                        0
+                        if st.value == "normal"
+                        else (1 if st.value == "warning" else 2)
+                    )
+                metric(
+                    "bocik_circuit_breaker_state",
+                    cb_state,
+                    labels,
+                    "Circuit breaker (0=normal, 1=warning, 2=halted)",
+                )
+                active = 0
+                for sym_state in p.symbol_states.values():
+                    active += len(sym_state.get("open_positions", {}))
+                metric(
+                    "bocik_open_positions", active, labels, "Number of open positions"
+                )
+
+            ws_connected = 0
+            for ws in bot.ws_clients.values():
+                if ws.is_running():
+                    ws_connected += 1
+            metric(
+                "bocik_websocket_connections",
+                ws_connected,
+                help_text="Active WebSocket connections",
+            )
+
+            import sqlite3
+            import os
+
+            db_path = (
+                bot.config.get("data", {})
+                .get("database", {})
+                .get("path", "./data/trading.db")
+            )
+            if os.path.exists(db_path):
+                try:
+                    c = sqlite3.connect(db_path)
+                    for name in ["pure", "ml"]:
+                        row = c.execute(
+                            "SELECT COUNT(*), COALESCE(SUM(pnl),0), COALESCE(SUM(CASE WHEN pnl>0 THEN 1 ELSE 0 END),0) FROM trades WHERE pipeline=?",
+                            (name,),
+                        ).fetchone()
+                        pipe_label = {"pipeline": name}
+                        metric(
+                            "bocik_trades_total",
+                            row[0],
+                            pipe_label,
+                            "Total number of closed trades",
+                        )
+                        metric(
+                            "bocik_pnl_total",
+                            round(row[1] or 0, 2),
+                            pipe_label,
+                            "Total PnL",
+                        )
+                        metric(
+                            "bocik_win_rate",
+                            round(row[2] / row[0] * 100, 1) if row[0] > 0 else 0,
+                            pipe_label,
+                            "Win rate percentage",
+                        )
+                    c.close()
+                except Exception:
+                    pass
+
+            body = "\n".join(lines) + "\n"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body.encode("utf-8"))
+        except Exception:
+            self.send_error(500)
 
 
 class ThreadingHTTPServer(ThreadingTCPServer):
