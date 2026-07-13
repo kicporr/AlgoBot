@@ -1,0 +1,222 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Bot Status",
+      "type": "stat",
+      "gridPos": { "h": 3, "w": 4, "x": 0, "y": 0 },
+      "targets": [{ "expr": "bocik_running", "legendFormat": "Running" }],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "value": "1", "text": "🟢 RUNNING" },
+            { "type": "value", "value": "0", "text": "🔴 STOPPED" }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Uptime",
+      "type": "stat",
+      "gridPos": { "h": 3, "w": 4, "x": 4, "y": 0 },
+      "targets": [{ "expr": "bocik_uptime_seconds", "legendFormat": "Uptime" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dtdurations",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "WebSocket Connections",
+      "type": "stat",
+      "gridPos": { "h": 3, "w": 4, "x": 8, "y": 0 },
+      "targets": [{ "expr": "bocik_websocket_connections", "legendFormat": "WS" }],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "Equity (Pure)",
+      "type": "stat",
+      "gridPos": { "h": 3, "w": 6, "x": 0, "y": 3 },
+      "targets": [{ "expr": "bocik_equity{pipeline=\"pure\"}", "legendFormat": "Pure" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 0,
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        }
+      }
+    },
+    {
+      "id": 11,
+      "title": "Equity (ML)",
+      "type": "stat",
+      "gridPos": { "h": 3, "w": 6, "x": 6, "y": 3 },
+      "targets": [{ "expr": "bocik_equity{pipeline=\"ml\"}", "legendFormat": "ML" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 0,
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        }
+      }
+    },
+    {
+      "id": 20,
+      "title": "Total PnL",
+      "type": "stat",
+      "gridPos": { "h": 3, "w": 4, "x": 0, "y": 6 },
+      "targets": [
+        { "expr": "bocik_pnl_total{pipeline=\"pure\"}", "legendFormat": "Pure" },
+        { "expr": "bocik_pnl_total{pipeline=\"ml\"}", "legendFormat": "ML" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 0,
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 0 }] }
+        }
+      }
+    },
+    {
+      "id": 21,
+      "title": "Win Rate",
+      "type": "gauge",
+      "gridPos": { "h": 3, "w": 4, "x": 4, "y": 6 },
+      "targets": [
+        { "expr": "bocik_win_rate{pipeline=\"pure\"}", "legendFormat": "Pure" },
+        { "expr": "bocik_win_rate{pipeline=\"ml\"}", "legendFormat": "ML" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 45 }, { "color": "green", "value": 55 }] }
+        }
+      }
+    },
+    {
+      "id": 22,
+      "title": "Open Positions",
+      "type": "stat",
+      "gridPos": { "h": 3, "w": 4, "x": 8, "y": 6 },
+      "targets": [
+        { "expr": "bocik_open_positions{pipeline=\"pure\"}", "legendFormat": "Pure" },
+        { "expr": "bocik_open_positions{pipeline=\"ml\"}", "legendFormat": "ML" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 3 }] }
+        }
+      }
+    },
+    {
+      "id": 30,
+      "title": "Total Trades",
+      "type": "stat",
+      "gridPos": { "h": 3, "w": 6, "x": 0, "y": 9 },
+      "targets": [
+        { "expr": "bocik_trades_total{pipeline=\"pure\"}", "legendFormat": "Pure" },
+        { "expr": "bocik_trades_total{pipeline=\"ml\"}", "legendFormat": "ML" }
+      ]
+    },
+    {
+      "id": 31,
+      "title": "Circuit Breaker State",
+      "type": "stat",
+      "gridPos": { "h": 3, "w": 6, "x": 6, "y": 9 },
+      "targets": [
+        { "expr": "bocik_circuit_breaker_state{pipeline=\"pure\"}", "legendFormat": "Pure" },
+        { "expr": "bocik_circuit_breaker_state{pipeline=\"ml\"}", "legendFormat": "ML" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "value": "0", "text": "✅ Normal" },
+            { "type": "value", "value": "1", "text": "⚠️ Warning" },
+            { "type": "value", "value": "2", "text": "🚨 Halted" }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] }
+        }
+      }
+    },
+    {
+      "id": 40,
+      "title": "Equity over time",
+      "type": "graph",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 12 },
+      "targets": [
+        { "expr": "bocik_equity{pipeline=\"pure\"}", "legendFormat": "Pure" },
+        { "expr": "bocik_equity{pipeline=\"ml\"}", "legendFormat": "ML" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": { "fillOpacity": 10, "lineWidth": 2 }
+        }
+      }
+    },
+    {
+      "id": 41,
+      "title": "PnL over time",
+      "type": "graph",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
+      "targets": [
+        { "expr": "bocik_pnl_total{pipeline=\"pure\"}", "legendFormat": "Pure" },
+        { "expr": "bocik_pnl_total{pipeline=\"ml\"}", "legendFormat": "ML" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": { "fillOpacity": 10, "lineWidth": 2 }
+        }
+      }
+    },
+    {
+      "id": 42,
+      "title": "Win Rate over time",
+      "type": "graph",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
+      "targets": [
+        { "expr": "bocik_win_rate{pipeline=\"pure\"}", "legendFormat": "Pure" },
+        { "expr": "bocik_win_rate{pipeline=\"ml\"}", "legendFormat": "ML" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "custom": { "fillOpacity": 10, "lineWidth": 2 }
+        }
+      }
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "tags": ["bocik", "trading"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "bocik — Trading Bot",
+  "uid": "bocik-overview",
+  "version": 1
+}
