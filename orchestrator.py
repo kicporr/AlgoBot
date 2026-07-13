@@ -399,7 +399,8 @@ class TradingBot:
                          f"({'testnet' if self.config['exchange'].get('testnet', False) else 'mainnet'})")
         
         self.running = True
-        
+        self._start_time = time.time()
+
         # Start Dashboard Server
         dash_cfg = self.config.get("dashboard", {})
         if dash_cfg.get("enabled", True):

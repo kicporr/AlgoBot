@@ -42,7 +42,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == '/' or self.path == '/index.html':
             self._serve_static_file('index.html', 'text/html')
-        elif self.path.startswith('/css/') or self.path.startswith('/js/') or self.path.startswith('/tabs/'):
+        elif self.path.startswith('/css/') or self.path.startswith('/js/') or self.path.startswith('/tabs/') or self.path.startswith('/assets/'):
             # Strip leading slash and serve from the dashboard directory
             relative_path = self.path.lstrip('/')
             content_type = self._get_mime_type(self.path)
@@ -83,6 +83,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif self.path.startswith('/api/events'):
             qs = self._parse_qs()
             self._send_json(self._get_events(qs.get('pipeline', None)))
+        elif self.path == '/api/health':
+            self._send_json(self._get_health())
         else:
             self.send_error(404, 'File Not Found')
 
@@ -1233,6 +1235,33 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(result)
         except Exception as e:
             self.send_error(500, str(e))
+
+    def _get_health(self):
+        """GET /api/health — lightweight health check for monitoring."""
+        if not self.bot:
+            return {"status": "error", "error": "Bot not initialized"}
+        import time as _t
+        try:
+            started = getattr(self.bot, '_start_time', None)
+            uptime = int(_t.time() - started) if started else 0
+
+            pipelines = {}
+            for name, p in self.bot.pipelines.items():
+                cb = getattr(p, 'circuit_breaker', None)
+                pipelines[name] = {
+                    "state": "running" if self.bot.running else "stopped",
+                    "balance": round(p.balance, 2) if hasattr(p, 'balance') else 0,
+                    "circuit_breaker": cb.state.value if cb and hasattr(cb, 'state') else "unknown",
+                }
+
+            return {
+                "status": "ok" if self.bot.running else "stopped",
+                "uptime_seconds": uptime,
+                "exchange": self.bot.config.get("exchange", {}).get("name", "?"),
+                "pipelines": pipelines,
+            }
+        except Exception:
+            return {"status": "error"}
 
 class ThreadingHTTPServer(ThreadingTCPServer):
     allow_reuse_address = True
