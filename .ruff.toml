@@ -1,12 +1,9 @@
 [lint]
 select = ["E", "F", "W"]
-ignore = ["E501", "E402", "W503"]
+ignore = ["E501", "E402"]
 
 [format]
 quote-style = "double"
 indent-style = "space"
 
-[exclude]
-"research/"
-"notebooks/"
-".rtk/"
+exclude = ["research/", "notebooks/", ".rtk/"]

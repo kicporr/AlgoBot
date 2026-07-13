@@ -19,7 +19,6 @@ import os
 import time
 import yaml
 import threading
-from pathlib import Path
 from typing import Optional
 from dotenv import load_dotenv
 
@@ -28,8 +27,12 @@ from monitoring.telegram_bot import TelegramAlerter
 
 # Data pipeline
 from data import (
-    DataValidator, BitgetWSClient, BitgetRESTClient, OHLCVResampler,
-    DatabaseManager, CandleRepository, TradeRepository, SignalRepository,
+    BitgetWSClient,
+    BitgetRESTClient,
+    DatabaseManager,
+    CandleRepository,
+    TradeRepository,
+    SignalRepository,
     has_websocket,
 )
 
@@ -47,7 +50,7 @@ from strategies.mtf_macd import MTF_MACD_Elder
 from strategies.mean_reversion import MeanReversion
 
 # Ensemble
-from ensemble.regime_classifier import RegimeClassifier, MarketRegime
+from ensemble.regime_classifier import RegimeClassifier
 from ensemble.router import EnsembleRouter
 
 # Risk
@@ -63,8 +66,13 @@ class TradingPipeline:
     vs MTF_MACD + MetaLabeler) on the same symbols with separate capital.
     """
 
-    def __init__(self, name: str, config: dict, symbols: list[str],
-                 use_meta_labeler: bool = False):
+    def __init__(
+        self,
+        name: str,
+        config: dict,
+        symbols: list[str],
+        use_meta_labeler: bool = False,
+    ):
         self.name = name
         self.config = config
         self.symbols = symbols
@@ -85,9 +93,11 @@ class TradingPipeline:
         if use_meta_labeler:
             try:
                 from strategies.meta_labeling import MetaLabeler
+
                 self.meta_labeler = MetaLabeler(config)
             except Exception as e:
                 from loguru import logger
+
                 logger.warning(f"Pipeline '{name}': MetaLabeler init failed: {e}")
 
         # Per-symbol state (built by TradingBot after init)
@@ -110,8 +120,10 @@ class TradingPipeline:
         for sym, state in self.symbol_states.items():
             for side, pos in state.get("open_positions", {}).items():
                 try:
-                    close_price = (state.get("latest_features", {}).get("close")
-                                   or pos["entry_price"])
+                    close_price = (
+                        state.get("latest_features", {}).get("close")
+                        or pos["entry_price"]
+                    )
                 except Exception:
                     close_price = pos["entry_price"]
                 if side == "long":
@@ -127,55 +139,71 @@ class TradingPipeline:
 
 class TradingBot:
     """Main trading bot — wires everything together."""
-    
+
     def __init__(self, config_path: str = "config/settings.yaml"):
         load_dotenv("config/.env")
-        
+
         with open(config_path) as f:
             self.config = yaml.safe_load(f)
-            
+
         # Update config with environment variables
         import os
-        for key in ["BITGET_API_KEY", "BITGET_SECRET_KEY", "BITGET_PASSPHRASE", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]:
+
+        for key in [
+            "BITGET_API_KEY",
+            "BITGET_SECRET_KEY",
+            "BITGET_PASSPHRASE",
+            "TELEGRAM_BOT_TOKEN",
+            "TELEGRAM_CHAT_ID",
+        ]:
             val = os.getenv(key)
             if val:
                 self.config[key] = val
-        
+
         self.logger = setup_logger(self.config)
         self.telegram = TelegramAlerter(self.config)
-        
+
         # ── Data Pipeline (Phase 1) ─────────────────────────
         self.db = DatabaseManager(self.config)
         self.candle_repo = CandleRepository(self.db)
         self.trade_repo = TradeRepository(self.db)
         self.signal_repo = SignalRepository(self.db)
-        
+
         # Shared ccxt exchange instance — one rate limiter for all API calls
         import ccxt
+
         ex_cfg = self.config.get("exchange", {})
         ex_type = ex_cfg.get("type", "swap")
-        self._ccxt_exchange = ccxt.bitget({
-            "apiKey": self.config.get("BITGET_API_KEY", ""),
-            "secret": self.config.get("BITGET_SECRET_KEY", ""),
-            "password": self.config.get("BITGET_PASSPHRASE", ""),
-            "enableRateLimit": True,
-            "options": {"defaultType": ex_type},
-        })
+        self._ccxt_exchange = ccxt.bitget(
+            {
+                "apiKey": self.config.get("BITGET_API_KEY", ""),
+                "secret": self.config.get("BITGET_SECRET_KEY", ""),
+                "password": self.config.get("BITGET_PASSPHRASE", ""),
+                "enableRateLimit": True,
+                "options": {"defaultType": ex_type},
+            }
+        )
         # Load markets early (fail-fast if auth is wrong)
         try:
             self._ccxt_exchange.load_markets()
-            self.logger.info("Shared ccxt exchange: markets loaded, connection verified")
+            self.logger.info(
+                "Shared ccxt exchange: markets loaded, connection verified"
+            )
         except Exception as e:
-            self.logger.warning(f"Could not load markets at init (will retry later): {e}")
+            self.logger.warning(
+                f"Could not load markets at init (will retry later): {e}"
+            )
 
         # REST client for backfilling (uses shared ccxt instance)
         self.rest_client: Optional[BitgetRESTClient] = None
         try:
-            self.rest_client = BitgetRESTClient(self.config, exchange=self._ccxt_exchange)
+            self.rest_client = BitgetRESTClient(
+                self.config, exchange=self._ccxt_exchange
+            )
             self.logger.info("Bitget REST client initialized")
         except Exception as e:
             self.logger.warning(f"REST client unavailable: {e}")
-        
+
         # ── Multi-Symbol Setup ────────────────────────────────
         self.symbols = self.config.get("exchange", {}).get("symbols", ["BTC/USDT:USDT"])
 
@@ -208,8 +236,12 @@ class TradingBot:
 
         # ── Dual Pipelines ────────────────────────────────────
         self.pipelines = {
-            "pure": TradingPipeline("pure", self.config, self.symbols, use_meta_labeler=False),
-            "ml": TradingPipeline("ml", self.config, self.symbols, use_meta_labeler=True),
+            "pure": TradingPipeline(
+                "pure", self.config, self.symbols, use_meta_labeler=False
+            ),
+            "ml": TradingPipeline(
+                "ml", self.config, self.symbols, use_meta_labeler=True
+            ),
         }
         for p in self.pipelines.values():
             p.symbol_states = _build_symbol_states(p)
@@ -236,7 +268,9 @@ class TradingBot:
         if has_websocket():
             for symbol in self.symbols:
                 symbol_cfg = self.symbol_states[symbol]["config"]
-                self.ws_clients[symbol] = BitgetWSClient(symbol_cfg, rest_client=self.rest_client)
+                self.ws_clients[symbol] = BitgetWSClient(
+                    symbol_cfg, rest_client=self.rest_client
+                )
         else:
             self.logger.warning("websocket-client not installed — live mode disabled")
 
@@ -277,13 +311,14 @@ class TradingBot:
     # ─── Pipeline context (switched by _on_1h_candle_dual) ──
 
     def _active(self) -> TradingPipeline:
-        return getattr(self, '_active_pipeline', self.pipelines["pure"])
+        return getattr(self, "_active_pipeline", self.pipelines["pure"])
 
     # ─── Backward-compatible properties (delegate to active pipeline) ──
 
     @property
     def balance(self):
         return self._active().balance
+
     @balance.setter
     def balance(self, v):
         self._active().balance = v
@@ -291,6 +326,7 @@ class TradingBot:
     @property
     def equity(self):
         return self._active().equity
+
     @equity.setter
     def equity(self, v):
         self._active().equity = v
@@ -298,6 +334,7 @@ class TradingBot:
     @property
     def initial_capital(self):
         return self._active().initial_capital
+
     @initial_capital.setter
     def initial_capital(self, v):
         self._active().initial_capital = v
@@ -305,6 +342,7 @@ class TradingBot:
     @property
     def recent_trades_pnl(self):
         return self._active().recent_trades_pnl
+
     @recent_trades_pnl.setter
     def recent_trades_pnl(self, v):
         self._active().recent_trades_pnl = v
@@ -312,6 +350,7 @@ class TradingBot:
     @property
     def open_positions(self):
         return self._active().open_positions
+
     @open_positions.setter
     def open_positions(self, v):
         self._active().open_positions = v
@@ -319,6 +358,7 @@ class TradingBot:
     @property
     def symbol_states(self):
         return self._active().symbol_states
+
     @symbol_states.setter
     def symbol_states(self, v):
         self._active().symbol_states = v
@@ -326,6 +366,7 @@ class TradingBot:
     @property
     def circuit_breaker(self):
         return self._active().circuit_breaker
+
     @circuit_breaker.setter
     def circuit_breaker(self, v):
         self._active().circuit_breaker = v
@@ -333,6 +374,7 @@ class TradingBot:
     @property
     def risk_monitor(self):
         return self._active().risk_monitor
+
     @risk_monitor.setter
     def risk_monitor(self, v):
         self._active().risk_monitor = v
@@ -340,6 +382,7 @@ class TradingBot:
     @property
     def circuit_breaker_alert_sent(self):
         return self._active().circuit_breaker_alert_sent
+
     @circuit_breaker_alert_sent.setter
     def circuit_breaker_alert_sent(self, v):
         self._active().circuit_breaker_alert_sent = v
@@ -347,6 +390,7 @@ class TradingBot:
     @property
     def latest_features(self):
         return self._active().latest_features
+
     @latest_features.setter
     def latest_features(self, v):
         self._active().latest_features = v
@@ -354,6 +398,7 @@ class TradingBot:
     @property
     def meta_labeler(self):
         return self._active().meta_labeler
+
     @meta_labeler.setter
     def meta_labeler(self, v):
         self._active().meta_labeler = v
@@ -369,17 +414,18 @@ class TradingBot:
     def _get_symbol_config(self, symbol: str) -> dict:
         """Get merged config for a specific symbol."""
         import copy
+
         # Deep copy global config
         cfg = copy.deepcopy(self.config)
-        
+
         # Set the symbol as the active exchange symbol
         cfg["exchange"]["symbols"] = [symbol]
-        
+
         # Merge symbol-specific overrides
         overrides = self.config.get("symbols", {}).get(symbol, {})
         if not overrides:
             return cfg
-            
+
         # Recursive merge of nested structures
         def merge_dicts(dict1, dict2):
             for k, v in dict2.items():
@@ -387,17 +433,19 @@ class TradingBot:
                     merge_dicts(dict1[k], v)
                 else:
                     dict1[k] = v
-        
+
         merge_dicts(cfg, overrides)
         return cfg
-    
+
     def start(self):
         """Start the trading bot."""
         self.logger.info(f"🤖 Starting bocik v{self.config['bot']['version']}")
         self.logger.info(f"Mode: {'PAPER' if self.paper_trading else 'LIVE'}")
-        self.logger.info(f"Exchange: {self.config['exchange']['name']} "
-                         f"({'testnet' if self.config['exchange'].get('testnet', False) else 'mainnet'})")
-        
+        self.logger.info(
+            f"Exchange: {self.config['exchange']['name']} "
+            f"({'testnet' if self.config['exchange'].get('testnet', False) else 'mainnet'})"
+        )
+
         self.running = True
         self._start_time = time.time()
 
@@ -405,6 +453,7 @@ class TradingBot:
         dash_cfg = self.config.get("dashboard", {})
         if dash_cfg.get("enabled", True):
             from dashboard.server import run_dashboard_server
+
             host = dash_cfg.get("host", "127.0.0.1")
             port = dash_cfg.get("port", 8080)
             try:
@@ -413,7 +462,7 @@ class TradingBot:
                 self.logger.error(f"Failed to start dashboard server: {e}")
 
         self.risk_monitor.set_initial_capital(self.initial_capital)
-        
+
         # Prime FeatureEngine and strategy caches from REST API on startup
         self._priming_success: dict[str, bool] = {s: False for s in self.symbols}
         self._priming_attempted = False
@@ -422,6 +471,7 @@ class TradingBot:
 
         if self.rest_client:
             import time as _time
+
             max_retries = 3
             # Prime BOTH pipelines (pure and ml share feature data, but each needs its own strategy state)
             for pipe_name, pipeline in self.pipelines.items():
@@ -430,33 +480,47 @@ class TradingBot:
                     state = pipeline.symbol_states[symbol]
                     for attempt in range(1, max_retries + 1):
                         try:
-                            self.logger.info(f"[{pipe_name}] Priming caches for {symbol} (attempt {attempt}/{max_retries})...")
-                            df_1h = self.rest_client.fetch_days(timeframe="1h", days=30, symbol=symbol)
-                            df_4h = self.rest_client.fetch_days(timeframe="4h", days=30, symbol=symbol)
-                            df_1d = self.rest_client.fetch_days(timeframe="1d", days=45, symbol=symbol)
+                            self.logger.info(
+                                f"[{pipe_name}] Priming caches for {symbol} (attempt {attempt}/{max_retries})..."
+                            )
+                            df_1h = self.rest_client.fetch_days(
+                                timeframe="1h", days=30, symbol=symbol
+                            )
+                            df_4h = self.rest_client.fetch_days(
+                                timeframe="4h", days=30, symbol=symbol
+                            )
+                            df_1d = self.rest_client.fetch_days(
+                                timeframe="1d", days=45, symbol=symbol
+                            )
 
                             if not df_1h.empty:
                                 state["feature_engine"].prime_cache(
                                     df_1h,
                                     df_4h if not df_4h.empty else None,
-                                    df_1d if not df_1d.empty else None
+                                    df_1d if not df_1d.empty else None,
                                 )
                                 df_feats = state["feature_engine"].bulk_compute(
                                     df_1h,
                                     df_4h if not df_4h.empty else None,
-                                    df_1d if not df_1d.empty else None
+                                    df_1d if not df_1d.empty else None,
                                 )
                                 if not df_feats.empty:
-                                    state["latest_features"] = df_feats.iloc[-1].to_dict()
+                                    state["latest_features"] = df_feats.iloc[
+                                        -1
+                                    ].to_dict()
                                     self._priming_success[symbol] = True
-                                    self.logger.info(f"[{pipe_name}] Feature engine primed for {symbol} ({len(state['latest_features'])} features)")
+                                    self.logger.info(
+                                        f"[{pipe_name}] Feature engine primed for {symbol} ({len(state['latest_features'])} features)"
+                                    )
 
                             if not df_1d.empty:
                                 mtf_macd = state["strategies"].get("mtf_macd")
                                 if mtf_macd:
                                     mtf_macd._d1_closes = []
                                     for _, row in df_1d.iterrows():
-                                        mtf_macd.on_higher_tf_candle(row.to_dict(), "1d")
+                                        mtf_macd.on_higher_tf_candle(
+                                            row.to_dict(), "1d"
+                                        )
                                     self.logger.info(
                                         f"[{pipe_name}] MTF MACD primed for {symbol}: {len(mtf_macd._d1_closes)} D1 closes, "
                                         f"Trend={mtf_macd.d1_trend}"
@@ -464,7 +528,9 @@ class TradingBot:
                             break  # Success — skip remaining retries
 
                         except Exception as e:
-                            self.logger.warning(f"[{pipe_name}] Priming attempt {attempt}/{max_retries} failed for {symbol}: {e}")
+                            self.logger.warning(
+                                f"[{pipe_name}] Priming attempt {attempt}/{max_retries} failed for {symbol}: {e}"
+                            )
                             if attempt < max_retries:
                                 _time.sleep(5)
 
@@ -490,34 +556,55 @@ class TradingBot:
         if self.ws_clients and has_websocket():
             for symbol, ws in self.ws_clients.items():
                 # Bind callbacks with fan-out to both pipelines
-                ws.on_candle("1m", lambda candle, s=symbol: self._on_1m_candle(s, candle))
-                ws.on_candle("1h", lambda candle, s=symbol: self._on_1h_candle_dual(s, candle))
-                ws.on_candle("4h", lambda candle, s=symbol: self._on_4h_candle_dual(s, candle))
-                ws.on_candle("1d", lambda candle, s=symbol: self._on_1d_candle_dual(s, candle))
-                
+                ws.on_candle(
+                    "1m", lambda candle, s=symbol: self._on_1m_candle(s, candle)
+                )
+                ws.on_candle(
+                    "1h", lambda candle, s=symbol: self._on_1h_candle_dual(s, candle)
+                )
+                ws.on_candle(
+                    "4h", lambda candle, s=symbol: self._on_4h_candle_dual(s, candle)
+                )
+                ws.on_candle(
+                    "1d", lambda candle, s=symbol: self._on_1d_candle_dual(s, candle)
+                )
+
                 # Start WS (auto-primes resampler with historical data, then streams)
-                backfill_hours = self.config.get("data", {}).get("backfill", {}).get("prime_hours", 24)
+                backfill_hours = (
+                    self.config.get("data", {})
+                    .get("backfill", {})
+                    .get("prime_hours", 24)
+                )
                 ws.start(backfill_hours=backfill_hours)
-                self.logger.info(f"WebSocket client started for {symbol} — listening for candles")
+                self.logger.info(
+                    f"WebSocket client started for {symbol} — listening for candles"
+                )
         else:
-            self.logger.warning("Running without WebSocket — historical/backtest mode only")
-            
+            self.logger.warning(
+                "Running without WebSocket — historical/backtest mode only"
+            )
+
         # Start periodic report scheduler
-        reports_cfg = self.config.get("monitoring", {}).get("telegram", {}).get("reports", {})
+        reports_cfg = (
+            self.config.get("monitoring", {}).get("telegram", {}).get("reports", {})
+        )
         if reports_cfg.get("enabled", False):
             import threading
-            self.scheduler_thread = threading.Thread(target=self._scheduler_loop, name="bocik-scheduler", daemon=True)
+
+            self.scheduler_thread = threading.Thread(
+                target=self._scheduler_loop, name="bocik-scheduler", daemon=True
+            )
             self.scheduler_thread.start()
             self.logger.info("Telegram periodic report scheduler thread started.")
-        
+
         self.logger.info("Bot initialized and running.")
-    
+
     def stop(self, reason: str = "Manual stop"):
         """Gracefully stop the bot."""
         self.running = False
-        
+
         # Stop Dashboard Server
-        if hasattr(self, 'dashboard_server') and self.dashboard_server:
+        if hasattr(self, "dashboard_server") and self.dashboard_server:
             try:
                 self.dashboard_server.shutdown()
                 self.dashboard_server.server_close()
@@ -532,11 +619,10 @@ class TradingBot:
                 self.logger.info(f"WebSocket client stopped for {symbol}")
             except Exception as e:
                 self.logger.warning(f"Error stopping WebSocket for {symbol}: {e}")
-        
+
         self.logger.warning(f"Bot stopped: {reason}")
         self.telegram.alert(f"⏹️ Bot stopped: {reason}")
 
-    
     def _on_1m_candle(self, symbol: str, candle: dict):
         """Called on every validated 1m candle from WebSocket.
 
@@ -546,7 +632,7 @@ class TradingBot:
         """
         candle["symbol"] = symbol
         self.candle_repo.insert(candle)
-    
+
     def _on_1h_candle_dual(self, symbol: str, candle: dict):
         """Fan out 1H candle to both pipelines for independent trading."""
         with self._pipeline_lock:
@@ -555,7 +641,9 @@ class TradingBot:
                 try:
                     self._on_1h_candle(symbol, candle)
                 except Exception as e:
-                    self.logger.error(f"[{pipe_name}] {symbol} handler error: {e}", exc_info=True)
+                    self.logger.error(
+                        f"[{pipe_name}] {symbol} handler error: {e}", exc_info=True
+                    )
             self._active_pipeline = self.pipelines["pure"]  # Reset to default
 
     def _on_1h_candle(self, symbol: str, candle: dict):
@@ -574,10 +662,12 @@ class TradingBot:
             state = self.symbol_states[symbol]
             close = candle["close"]
             features = state["feature_engine"].process_candle(candle)
-            
+
             if not features:
                 # Warn if stuck without features after priming failure
-                if self._priming_attempted and not self._priming_success.get(symbol, True):
+                if self._priming_attempted and not self._priming_success.get(
+                    symbol, True
+                ):
                     cnt = self._priming_empty_count.get(symbol, 0) + 1
                     self._priming_empty_count[symbol] = cnt
                     if cnt in (10, 60, 360):  # ~10h, 2.5d, 15d of waiting
@@ -586,13 +676,16 @@ class TradingBot:
                             f"(priming failed). Consider restarting or checking REST API."
                         )
                 return  # Not enough history yet
-            
+
             state["latest_features"] = features
             self.latest_features = features  # compatibility
 
             # ⚠️ Warn if priming previously failed for this symbol
-            if (self._priming_attempted and not self._priming_success.get(symbol, True)
-                    and symbol not in self._priming_warned_for):
+            if (
+                self._priming_attempted
+                and not self._priming_success.get(symbol, True)
+                and symbol not in self._priming_warned_for
+            ):
                 self._priming_warned_for.add(symbol)
                 self.logger.warning(
                     f"[{symbol}] Features now available via WebSocket (priming previously failed). "
@@ -605,39 +698,43 @@ class TradingBot:
             position_side = list(open_pos.keys())[0] if in_position else ""
             position_size = sum(p["size"] for p in open_pos.values())
             entry_price = open_pos.get(position_side, {}).get("entry_price", 0.0)
-            
+
             # ── Update risk monitor with global equity ───────────
             total_unrealized_pnl = 0.0
             total_position_value = 0.0
-            
+
             # Actually, let's calculate total unrealized PnL from self.symbol_states
             for sym, sym_state in self.symbol_states.items():
                 for side, p in sym_state["open_positions"].items():
                     try:
-                        sym_close = self.symbol_states[sym]["feature_engine"]._cache["1h"]["close"].iloc[-1]
+                        sym_close = (
+                            self.symbol_states[sym]["feature_engine"]
+                            ._cache["1h"]["close"]
+                            .iloc[-1]
+                        )
                     except Exception:
                         sym_close = p["entry_price"]
-                        
+
                     if side == "long":
                         unrealized = p["size"] * (sym_close - p["entry_price"])
                     else:
                         unrealized = p["size"] * (p["entry_price"] - sym_close)
                     total_unrealized_pnl += unrealized
                     total_position_value += p["size"] * sym_close
-            
+
             # Update equity to include unrealized PnL (for circuit breaker check)
             self.equity = self.balance + total_unrealized_pnl
-            
+
             self.risk_monitor.update(
                 equity=self.equity,
                 balance=self.balance,
                 btc_price=close,
-                position_size=position_size, # compatibility: this symbol's size
-                position_entry=entry_price, # compatibility: this symbol's entry
+                position_size=position_size,  # compatibility: this symbol's size
+                position_entry=entry_price,  # compatibility: this symbol's entry
             )
             # Override with the actual portfolio-wide unrealized PnL
             self.risk_monitor.unrealized_pnl = total_unrealized_pnl
-            
+
             # ── Circuit breaker check (global) ───────────────────
             avg_atr = features.get("atr_14", 0)
             state_cb, reason = self.circuit_breaker.check(
@@ -647,13 +744,19 @@ class TradingBot:
                 current_atr=avg_atr,
                 avg_atr=avg_atr,  # Use current as proxy
             )
-            
+
             if state_cb == BreakerState.HALTED:
                 self.logger.warning(f"⛔ GLOBAL CIRCUIT BREAKER: {reason}")
                 if not self.circuit_breaker_alert_sent:
                     from datetime import datetime
-                    halt_reason = getattr(self.circuit_breaker, "halt_reason", "") or reason
-                    halt_time = getattr(self.circuit_breaker, "halt_timestamp", None) or datetime.now()
+
+                    halt_reason = (
+                        getattr(self.circuit_breaker, "halt_reason", "") or reason
+                    )
+                    halt_time = (
+                        getattr(self.circuit_breaker, "halt_timestamp", None)
+                        or datetime.now()
+                    )
                     msg = (
                         f"🚨 *CIRCUIT BREAKER ACTIVATED*\n"
                         f"Reason: `{halt_reason}`\n"
@@ -663,37 +766,52 @@ class TradingBot:
                     self.telegram.circuit_breaker(msg)
                     self.circuit_breaker_alert_sent = True
                 return
-            
+
             if state_cb == BreakerState.WARNING:
-                self.logger.warning(f"⚠️ CIRCUIT WARNING: {reason} — skipping signal for {symbol}")
+                self.logger.warning(
+                    f"⚠️ CIRCUIT WARNING: {reason} — skipping signal for {symbol}"
+                )
                 return
-            
+
             # ── Check existing positions for this symbol (exit logic) ────
             if in_position:
                 exit_reason = state["position_tracker"].update(candle)
                 if exit_reason != "hold":
-                    self.logger.info(f"[{symbol}] Position exit triggered by tracker: {exit_reason}")
-                    exit_signal = Signal.SHORT if position_side == "long" else Signal.LONG
-                    self._close_position(symbol, position_side, candle, exit_signal, reason=exit_reason)
+                    self.logger.info(
+                        f"[{symbol}] Position exit triggered by tracker: {exit_reason}"
+                    )
+                    exit_signal = (
+                        Signal.SHORT if position_side == "long" else Signal.LONG
+                    )
+                    self._close_position(
+                        symbol, position_side, candle, exit_signal, reason=exit_reason
+                    )
                     return  # Don't enter same bar
-            
+
             # ── Generate strategy signal via ensemble router ─────────
             signal = state["ensemble"].get_signal(candle, features)
 
             # ── Meta-labeling filter (ML-based signal approval) ──────
-            if signal != Signal.FLAT and self.meta_labeler is not None and self.meta_labeler.is_ready():
+            if (
+                signal != Signal.FLAT
+                and self.meta_labeler is not None
+                and self.meta_labeler.is_ready()
+            ):
                 import time as _t
+
                 _t0 = _t.monotonic()
                 approved = self.meta_labeler.evaluate(signal, features)
                 _latency_ms = (_t.monotonic() - _t0) * 1000
 
                 # Track latency (log once per hour)
-                if not hasattr(self, '_ml_latency_samples'):
+                if not hasattr(self, "_ml_latency_samples"):
                     self._ml_latency_samples = []
                 self._ml_latency_samples.append(_latency_ms)
                 if len(self._ml_latency_samples) >= 50:
                     avg = sum(self._ml_latency_samples) / len(self._ml_latency_samples)
-                    p99 = sorted(self._ml_latency_samples)[int(len(self._ml_latency_samples) * 0.99)]
+                    p99 = sorted(self._ml_latency_samples)[
+                        int(len(self._ml_latency_samples) * 0.99)
+                    ]
                     self.logger.info(
                         f"MetaLabeler latency: avg={avg:.2f}ms p99={p99:.2f}ms "
                         f"({len(self._ml_latency_samples)} samples)"
@@ -707,37 +825,50 @@ class TradingBot:
                         )
 
                 if not approved:
-                    self.logger.debug(f"[{symbol}] Meta-labeler rejected {signal.name} signal")
-                    self.signal_repo.insert({
-                        "timestamp": candle["timestamp"],
-                        "strategy": f"mtf_macd:{symbol}",
-                        "signal": signal.value,
-                        "executed": False,
-                        "reject_reason": "meta_labeler_rejected",
-                    })
+                    self.logger.debug(
+                        f"[{symbol}] Meta-labeler rejected {signal.name} signal"
+                    )
+                    self.signal_repo.insert(
+                        {
+                            "timestamp": candle["timestamp"],
+                            "strategy": f"mtf_macd:{symbol}",
+                            "signal": signal.value,
+                            "executed": False,
+                            "reject_reason": "meta_labeler_rejected",
+                        }
+                    )
                     signal = Signal.FLAT
 
             # ── Check opposite strategy signal exit ───────────────
             if in_position:
-                is_opposite = (position_side == "long" and signal == Signal.SHORT) or \
-                              (position_side == "short" and signal == Signal.LONG)
+                is_opposite = (position_side == "long" and signal == Signal.SHORT) or (
+                    position_side == "short" and signal == Signal.LONG
+                )
                 if is_opposite:
                     bars_held = state["position_tracker"].bars_held
                     # Read min_hold from the strategy's own config (matches backtest behavior)
-                    strat_cfg = state["config"].get("strategies", {}).get("mtf_macd_elder", {})
+                    strat_cfg = (
+                        state["config"].get("strategies", {}).get("mtf_macd_elder", {})
+                    )
                     min_hold = strat_cfg.get("exit", {}).get("min_hold_bars", 1)
                     if bars_held >= min_hold:
-                        self.logger.info(f"[{symbol}] Position exit triggered by opposite strategy signal after {bars_held} bars")
-                        exit_signal = Signal.SHORT if position_side == "long" else Signal.LONG
-                        self._close_position(symbol, position_side, candle, exit_signal, reason="signal")
+                        self.logger.info(
+                            f"[{symbol}] Position exit triggered by opposite strategy signal after {bars_held} bars"
+                        )
+                        exit_signal = (
+                            Signal.SHORT if position_side == "long" else Signal.LONG
+                        )
+                        self._close_position(
+                            symbol, position_side, candle, exit_signal, reason="signal"
+                        )
                         return
-                
+
                 # If we are in position and no exit occurred, we stay flat/hold
                 return
-            
+
             if signal == Signal.FLAT:
                 return
-            
+
             # ── Global exposure & concurrency checks ────────────
             total_exposure_val = 0.0
             total_active_positions = 0
@@ -747,17 +878,23 @@ class TradingBot:
                     total_active_positions += 1
 
             # Max concurrent positions (aligned with multi-asset backtest)
-            max_concurrent = self.config.get("risk", {}).get("max_concurrent_positions", 3)
+            max_concurrent = self.config.get("risk", {}).get(
+                "max_concurrent_positions", 3
+            )
             if total_active_positions >= max_concurrent:
-                self.logger.debug(f"[{symbol}] Entry blocked by max concurrent positions ({total_active_positions}/{max_concurrent})")
-                self.signal_repo.insert({
-                    "pipeline": self._active().name,
-                    "timestamp": candle["timestamp"],
-                    "strategy": f"mtf_macd:{symbol}",
-                    "signal": signal.value,
-                    "executed": False,
-                    "reject_reason": f"max_concurrent({total_active_positions}/{max_concurrent})",
-                })
+                self.logger.debug(
+                    f"[{symbol}] Entry blocked by max concurrent positions ({total_active_positions}/{max_concurrent})"
+                )
+                self.signal_repo.insert(
+                    {
+                        "pipeline": self._active().name,
+                        "timestamp": candle["timestamp"],
+                        "strategy": f"mtf_macd:{symbol}",
+                        "signal": signal.value,
+                        "executed": False,
+                        "reject_reason": f"max_concurrent({total_active_positions}/{max_concurrent})",
+                    }
+                )
                 return
 
             # ── Correlation risk check ──────────────────────
@@ -779,9 +916,13 @@ class TradingBot:
                                 f"Consider reducing position size."
                             )
 
-            max_exposure_pct = self.config.get("risk", {}).get("position_sizing", {}).get("max_total_exposure_pct", 60)
+            max_exposure_pct = (
+                self.config.get("risk", {})
+                .get("position_sizing", {})
+                .get("max_total_exposure_pct", 60)
+            )
             max_exposure_limit = (max_exposure_pct / 100.0) * self.balance
-            
+
             # Calculate streaks from recent trades PnL
             consecutive_losses = 0
             consecutive_wins = 0
@@ -804,7 +945,7 @@ class TradingBot:
                 consecutive_losses=consecutive_losses,
                 consecutive_wins=consecutive_wins,
             )
-            
+
             if coin_size <= 0:
                 sizer_metrics = state["position_sizer"].get_last_metrics()
                 self.logger.info(
@@ -816,16 +957,18 @@ class TradingBot:
                     f"atr={avg_atr:.4f} | "
                     f"loss_streak={consecutive_losses}"
                 )
-                self.signal_repo.insert({
-                    "pipeline": self._active().name,
-                    "timestamp": candle["timestamp"],
-                    "strategy": f"mtf_macd:{symbol}",
-                    "signal": signal.value,
-                    "executed": False,
-                    "reject_reason": "position_sizer_zero",
-                })
+                self.signal_repo.insert(
+                    {
+                        "pipeline": self._active().name,
+                        "timestamp": candle["timestamp"],
+                        "strategy": f"mtf_macd:{symbol}",
+                        "signal": signal.value,
+                        "executed": False,
+                        "reject_reason": "position_sizer_zero",
+                    }
+                )
                 return
-            
+
             # Enforce max total exposure check
             new_position_value = coin_size * close
             if total_exposure_val + new_position_value > max_exposure_limit:
@@ -833,26 +976,36 @@ class TradingBot:
                     f"[{symbol}] Entry blocked by Max Total Exposure filter! "
                     f"Current Exposure: ${total_exposure_val:.2f}, Proj Exposure: ${total_exposure_val + new_position_value:.2f}, Limit: ${max_exposure_limit:.2f}"
                 )
-                self.signal_repo.insert({
-                    "pipeline": self._active().name,
-                    "timestamp": candle["timestamp"],
-                    "strategy": f"mtf_macd:{symbol}",
-                    "signal": signal.value,
-                    "executed": False,
-                    "reject_reason": f"max_exposure({total_exposure_val:.0f}/{max_exposure_limit:.0f})",
-                })
+                self.signal_repo.insert(
+                    {
+                        "pipeline": self._active().name,
+                        "timestamp": candle["timestamp"],
+                        "strategy": f"mtf_macd:{symbol}",
+                        "signal": signal.value,
+                        "executed": False,
+                        "reject_reason": f"max_exposure({total_exposure_val:.0f}/{max_exposure_limit:.0f})",
+                    }
+                )
                 return
-            
+
             # ── Execute ──────────────────────────────────────────
-            self._execute_signal(symbol, signal, candle, coin_size, features=features, atr=avg_atr, atr_pct=features.get("atr_pct", 2.0))
-            
+            self._execute_signal(
+                symbol,
+                signal,
+                candle,
+                coin_size,
+                features=features,
+                atr=avg_atr,
+                atr_pct=features.get("atr_pct", 2.0),
+            )
+
             # ── Periodic risk snapshot ───────────────────────────
             self._log_risk_snapshot()
-            
+
         except Exception as e:
             self.logger.error(f"[{symbol}] 1H handler error: {e}", exc_info=True)
             self.telegram.error(f"[{symbol}] 1H handler error: {e}")
-    
+
     def _on_4h_candle_dual(self, symbol: str, candle: dict):
         """Fan out 4H candle to both pipelines for regime updates."""
         with self._pipeline_lock:
@@ -861,7 +1014,9 @@ class TradingBot:
                 try:
                     self._on_4h_candle(symbol, candle)
                 except Exception as e:
-                    self.logger.error(f"[{pipeline.name}] 4H handler error: {e}", exc_info=True)
+                    self.logger.error(
+                        f"[{pipeline.name}] 4H handler error: {e}", exc_info=True
+                    )
             self._active_pipeline = self.pipelines["pure"]
 
     def _on_1d_candle_dual(self, symbol: str, candle: dict):
@@ -872,7 +1027,9 @@ class TradingBot:
                 try:
                     self._on_1d_candle(symbol, candle)
                 except Exception as e:
-                    self.logger.error(f"[{pipeline.name}] 1D handler error: {e}", exc_info=True)
+                    self.logger.error(
+                        f"[{pipeline.name}] 1D handler error: {e}", exc_info=True
+                    )
             self._active_pipeline = self.pipelines["pure"]
 
     def _on_4h_candle(self, symbol: str, candle: dict):
@@ -887,30 +1044,41 @@ class TradingBot:
                 regime = state["regime_classifier"].classify(features)
                 self.logger.info(
                     f"[{symbol}] 4H Regime: {regime.value.upper()} | "
-                    f"ADX={features.get('adx_14',0):.1f} | "
-                    f"BBw={features.get('bb_width',0):.3f} | "
-                    f"ATR={features.get('atr_14',0):.1f}"
+                    f"ADX={features.get('adx_14', 0):.1f} | "
+                    f"BBw={features.get('bb_width', 0):.3f} | "
+                    f"ATR={features.get('atr_14', 0):.1f}"
                 )
         except Exception as e:
             self.logger.error(f"[{symbol}] 4H handler error: {e}", exc_info=True)
-            
+
     def _on_1d_candle(self, symbol: str, candle: dict):
         """Called when a new 1D candle completes."""
         try:
-            self.logger.info(f"📅 [{symbol}] 1D candle completed: close={candle['close']}. Updating MTF MACD Elder D1 trend...")
+            self.logger.info(
+                f"📅 [{symbol}] 1D candle completed: close={candle['close']}. Updating MTF MACD Elder D1 trend..."
+            )
             state = self.symbol_states[symbol]
             # Feed 1D candle to feature engine cache for multi-TF features
             state["feature_engine"]._append_to_cache("1d", candle)
             mtf_macd = state["strategies"].get("mtf_macd")
             if mtf_macd:
                 mtf_macd.on_higher_tf_candle(candle, "1d")
-                self.logger.info(f"[{symbol}] MTF MACD D1 trend updated: {mtf_macd.d1_trend}")
+                self.logger.info(
+                    f"[{symbol}] MTF MACD D1 trend updated: {mtf_macd.d1_trend}"
+                )
         except Exception as e:
             self.logger.error(f"[{symbol}] 1D candle handler error: {e}", exc_info=True)
-    
+
     # ─── Position Management ────────────────────────────────
-    
-    def _close_position(self, symbol: str, side: str, candle: dict, exit_signal: Signal, reason: str = "trailing_stop"):
+
+    def _close_position(
+        self,
+        symbol: str,
+        side: str,
+        candle: dict,
+        exit_signal: Signal,
+        reason: str = "trailing_stop",
+    ):
         """Close an open position and record the trade."""
         state = self.symbol_states[symbol]
         if side not in state["open_positions"]:
@@ -924,10 +1092,10 @@ class TradingBot:
 
         # Sync with compatibility dict (only symbol-prefixed key)
         self.open_positions.pop(f"{symbol}:{side}", None)
-        
+
         entry_price = pos["entry_price"]
         size = pos["size"]
-        
+
         if self.paper_trading:
             exit_price = candle["close"]
             commission = 0.0006 * 2  # standard taker fee simulated
@@ -941,18 +1109,25 @@ class TradingBot:
         else:
             # LIVE / REAL execution
             opposite_side = "sell" if side == "long" else "buy"
-            self.logger.info(f"LIVE: Executing exit order for {symbol} {side.upper()} position...")
+            self.logger.info(
+                f"LIVE: Executing exit order for {symbol} {side.upper()} position..."
+            )
             order_res = self.order_manager.place_order_maker_only(
                 symbol=symbol,
                 side=opposite_side,
                 amount=size,
                 fallback_to_market=True,  # Exits must fill!
             )
-            
+
             if order_res["status"] == "failed" or order_res["filled"] <= 0:
-                self.logger.critical(f"LIVE: Exit order failed completely! Manual intervention required.")
-                self.telegram.alert(f"🚨 LIVE EXIT FAILED for {symbol} {side.upper()}! Status: {order_res['status']}", force=True)
-                
+                self.logger.critical(
+                    "LIVE: Exit order failed completely! Manual intervention required."
+                )
+                self.telegram.alert(
+                    f"🚨 LIVE EXIT FAILED for {symbol} {side.upper()}! Status: {order_res['status']}",
+                    force=True,
+                )
+
                 # Restore state on failure
                 state["open_positions"][side] = pos
                 self.open_positions[f"{symbol}:{side}"] = pos
@@ -960,19 +1135,23 @@ class TradingBot:
 
             exit_price = order_res["average"]
             actual_filled = order_res["filled"]
-            
+
             if actual_filled < size:
-                self.logger.warning(f"LIVE: Position only partially closed! Filled: {actual_filled}/{size}")
-            
+                self.logger.warning(
+                    f"LIVE: Position only partially closed! Filled: {actual_filled}/{size}"
+                )
+
             # Calculate actual PnL (maker fee 0.02% * 2)
-            maker_fee = self.config.get("exchange", {}).get("fees", {}).get("maker", 0.0002)
+            maker_fee = (
+                self.config.get("exchange", {}).get("fees", {}).get("maker", 0.0002)
+            )
             commission_cost = maker_fee * 2
-            
+
             if side == "long":
                 gross_return = (exit_price - entry_price) / entry_price
             else:
                 gross_return = (entry_price - exit_price) / entry_price
-                
+
             net_return = gross_return - commission_cost
             pnl = actual_filled * entry_price * net_return
             size = actual_filled
@@ -983,7 +1162,10 @@ class TradingBot:
         for sym, sym_state in self.symbol_states.items():
             for s, p in sym_state["open_positions"].items():
                 try:
-                    sym_close = sym_state.get("latest_features", {}).get("close") or p["entry_price"]
+                    sym_close = (
+                        sym_state.get("latest_features", {}).get("close")
+                        or p["entry_price"]
+                    )
                 except Exception:
                     sym_close = p["entry_price"]
                 if s == "long":
@@ -998,19 +1180,27 @@ class TradingBot:
         self.circuit_breaker.record_trade(pnl, is_closing=True)
         pnl_pct = (pnl / (size * entry_price)) * 100 if size > 0 else 0.0
         emoji = "✅" if pnl > 0 else "❌"
-        
+
         # Calculate slippage in basis points (bps)
         theoretical_entry = pos.get("theoretical_entry_price", entry_price)
         theoretical_exit = candle["close"]
-        
+
         if side == "long":
-            entry_slippage_bps = ((entry_price - theoretical_entry) / theoretical_entry) * 10000
-            exit_slippage_bps = ((theoretical_exit - exit_price) / theoretical_exit) * 10000
+            entry_slippage_bps = (
+                (entry_price - theoretical_entry) / theoretical_entry
+            ) * 10000
+            exit_slippage_bps = (
+                (theoretical_exit - exit_price) / theoretical_exit
+            ) * 10000
         else:  # short
-            entry_slippage_bps = ((theoretical_entry - entry_price) / theoretical_entry) * 10000
-            exit_slippage_bps = ((exit_price - theoretical_exit) / theoretical_exit) * 10000
+            entry_slippage_bps = (
+                (theoretical_entry - entry_price) / theoretical_entry
+            ) * 10000
+            exit_slippage_bps = (
+                (exit_price - theoretical_exit) / theoretical_exit
+            ) * 10000
         total_slippage_bps = entry_slippage_bps + exit_slippage_bps
-        
+
         self.logger.info(
             f"{emoji} Trade: {symbol} {side.upper()} | Reason={reason} | "
             f"Entry={entry_price:.2f} Exit={exit_price:.2f} | "
@@ -1019,9 +1209,14 @@ class TradingBot:
             f"Equity=${self.equity:.2f}"
         )
         sym_short = symbol.split("/")[0]
-        reason_pl = {"take_profit": "Take Profit", "trailing_stop": "Trailing Stop", "atr_stop": "ATR Stop", "time_exit": "Czasowe", "signal": "Sygnał"}.get(reason, reason)
+        reason_pl = {
+            "take_profit": "Take Profit",
+            "trailing_stop": "Trailing Stop",
+            "atr_stop": "ATR Stop",
+            "time_exit": "Czasowe",
+            "signal": "Sygnał",
+        }.get(reason, reason)
         pnl_emoji = "✅" if pnl > 0 else "❌"
-        side_emoji = "🟢" if side == "long" else "🔴"
         self.telegram.alert(
             f"{pnl_emoji} *{sym_short} {side.upper()} ZAMKNIĘTA* ({reason_pl})\n\n"
             f"💰 *PnL:* `{'+' if pnl > 0 else ''}${pnl:,.2f}` _({pnl_pct:+.2f}%)_\n"
@@ -1030,42 +1225,59 @@ class TradingBot:
         )
         # Store features_at_signal as JSON for live retraining
         import json as _json
+
         features_json_str = None
         feats = pos.get("features_at_signal")
         if feats and isinstance(feats, dict) and len(feats) > 0:
             try:
-                features_json_str = _json.dumps({k: float(v) if isinstance(v, (int, float, bool)) else v for k, v in list(feats.items())[:50]})
+                features_json_str = _json.dumps(
+                    {
+                        k: float(v) if isinstance(v, (int, float, bool)) else v
+                        for k, v in list(feats.items())[:50]
+                    }
+                )
             except Exception:
                 pass
 
-        self.trade_repo.insert({
-            "entry_time": pos["ts"],
-            "exit_time": candle["timestamp"],
-            "side": side,
-            "entry_price": entry_price,
-            "exit_price": exit_price,
-            "quantity": size,
-            "pnl": round(pnl, 2),
-            "pnl_pct": round(pnl_pct, 4),
-            "strategy": f"mtf_macd:{symbol}",
-            "exit_reason": reason,
-            "theoretical_entry_price": theoretical_entry,
-            "theoretical_exit_price": theoretical_exit,
-            "pipeline": self._active().name,
-            "features_json": features_json_str,
-        })
+        self.trade_repo.insert(
+            {
+                "entry_time": pos["ts"],
+                "exit_time": candle["timestamp"],
+                "side": side,
+                "entry_price": entry_price,
+                "exit_price": exit_price,
+                "quantity": size,
+                "pnl": round(pnl, 2),
+                "pnl_pct": round(pnl_pct, 4),
+                "strategy": f"mtf_macd:{symbol}",
+                "exit_reason": reason,
+                "theoretical_entry_price": theoretical_entry,
+                "theoretical_exit_price": theoretical_exit,
+                "pipeline": self._active().name,
+                "features_json": features_json_str,
+            }
+        )
 
         # Record outcome for meta-labeler degradation monitoring
         if self.meta_labeler is not None and self.meta_labeler.is_ready():
             self.meta_labeler.record_outcome(approved=True, was_profitable=pnl > 0)
             # Check for degradation alerts (every 10 trades to avoid spam)
-            if len(getattr(self.meta_labeler, '_outcome_log', [])) % 10 == 0:
+            if len(getattr(self.meta_labeler, "_outcome_log", [])) % 10 == 0:
                 alerts = self.meta_labeler.check_degradation()
                 for alert in alerts:
                     self.logger.warning(f"MetaLabeler degradation: {alert}")
                     self.telegram.alert(f"[DEGRADATION] {alert}", force=True)
 
-    def _execute_signal(self, symbol: str, signal: Signal, candle: dict, size_coin: float, features: dict = None, atr: float = 0.0, atr_pct: float = 2.0):
+    def _execute_signal(
+        self,
+        symbol: str,
+        signal: Signal,
+        candle: dict,
+        size_coin: float,
+        features: dict = None,
+        atr: float = 0.0,
+        atr_pct: float = 2.0,
+    ):
         """Execute a trading signal (paper or live)."""
         close = candle["close"]
         side = "long" if signal == Signal.LONG else "short"
@@ -1081,34 +1293,43 @@ class TradingBot:
         else:
             # LIVE / REAL execution
             order_side = "buy" if side == "long" else "sell"
-            self.logger.info(f"LIVE: Executing entry order for {symbol} {side.upper()}...")
+            self.logger.info(
+                f"LIVE: Executing entry order for {symbol} {side.upper()}..."
+            )
             order_res = self.order_manager.place_order_maker_only(
                 symbol=symbol,
                 side=order_side,
                 amount=size_coin,
                 fallback_to_market=False,  # Don't chase entries with Market!
             )
-            
+
             if order_res["status"] == "failed" or order_res["filled"] <= 0:
-                self.logger.warning(f"LIVE: Entry order failed/unfilled. Skipping signal.")
+                self.logger.warning(
+                    "LIVE: Entry order failed/unfilled. Skipping signal."
+                )
                 return
 
             entry_price = order_res["average"]
             executed_size = order_res["filled"]
 
         pos_data = {
-            "entry_price": entry_price, "size": executed_size,
-            "ts": candle["timestamp"], "side": side,
-            "highest": close, "lowest": close,
+            "entry_price": entry_price,
+            "size": executed_size,
+            "ts": candle["timestamp"],
+            "side": side,
+            "highest": close,
+            "lowest": close,
             "symbol": symbol,
             "theoretical_entry_price": close,
-            "features_at_signal": dict(features) if features is not None and hasattr(features, 'items') else (features.to_dict() if hasattr(features, 'to_dict') else {}),
+            "features_at_signal": dict(features)
+            if features is not None and hasattr(features, "items")
+            else (features.to_dict() if hasattr(features, "to_dict") else {}),
         }
         state["open_positions"][side] = pos_data
 
         # Sync with compatibility dict (always use symbol-prefixed key to avoid cross-symbol overwrites)
         self.open_positions[f"{symbol}:{side}"] = pos_data
-        
+
         # Initialize position tracker matching the backtester exit chain
         state["position_tracker"].enter(
             side=side,
@@ -1117,25 +1338,31 @@ class TradingBot:
             atr=atr,
             atr_pct=atr_pct,
             timestamp=candle["timestamp"],
-            symbol=symbol
+            symbol=symbol,
         )
-        
+
         self.logger.info(
-            f"📈 {symbol} {side.upper()}: {executed_size:.6f} @ ${entry_price:.2f} (Tracker levels: SL=${state['position_tracker'].position.stop_loss:.2f}, TP=${state['position_tracker'].position.take_profit:.2f}, trail={state['position_tracker'].position.trailing_distance*100:.1f}%)"
+            f"📈 {symbol} {side.upper()}: {executed_size:.6f} @ ${entry_price:.2f} (Tracker levels: SL=${state['position_tracker'].position.stop_loss:.2f}, TP=${state['position_tracker'].position.take_profit:.2f}, trail={state['position_tracker'].position.trailing_distance * 100:.1f}%)"
         )
-        self.signal_repo.insert({
-            "timestamp": candle["timestamp"],
-            "strategy": f"mtf_macd:{symbol}",
-            "signal": signal.value,
-            "executed": True,
-        })
+        self.signal_repo.insert(
+            {
+                "timestamp": candle["timestamp"],
+                "strategy": f"mtf_macd:{symbol}",
+                "signal": signal.value,
+                "executed": True,
+            }
+        )
 
         # Telegram alert for position open
         sym_short = symbol.split("/")[0]
         sl_price = state["position_tracker"].position.stop_loss
         tp_price = state["position_tracker"].position.take_profit
-        sl_pct = abs(entry_price - sl_price) / entry_price * 100 if entry_price > 0 else 0
-        tp_pct = abs(tp_price - entry_price) / entry_price * 100 if entry_price > 0 else 0
+        sl_pct = (
+            abs(entry_price - sl_price) / entry_price * 100 if entry_price > 0 else 0
+        )
+        tp_pct = (
+            abs(tp_price - entry_price) / entry_price * 100 if entry_price > 0 else 0
+        )
         side_emoji = "🟢" if side == "long" else "🔴"
         self.telegram.alert(
             f"{side_emoji} *{sym_short} {side.upper()} OTWARTA*\n\n"
@@ -1145,11 +1372,11 @@ class TradingBot:
             f"🎯 *Take Profit:* `${tp_price:,.2f}` _({tp_pct:.1f}%)_\n\n"
             f"💵 *Equity:* `${self.equity:,.2f}`"
         )
-    
+
     def _log_risk_snapshot(self):
         """Periodically log risk metrics (every hour)."""
         now = time.time()
-        if not hasattr(self, '_last_risk_log'):
+        if not hasattr(self, "_last_risk_log"):
             self._last_risk_log = 0.0
         if now - self._last_risk_log >= 3600:
             self._last_risk_log = now
@@ -1160,18 +1387,31 @@ class TradingBot:
                 f"DD={snap['current_drawdown_pct']}% | "
                 f"Trades={snap['trade_count']} WR={snap['win_rate']}%"
             )
-    
+
     def close_position_manual(self, symbol: str, side: str):
         """Manually close a specific position (called from dashboard)."""
-        import time, copy
+        import time
+
         side = side.lower()
         state = self.symbol_states.get(symbol)
         if not state or side not in state.get("open_positions", {}):
             return {"ok": False, "error": f"No open {side} position for {symbol}"}
         ws = self.ws_clients.get(symbol)
-        price = ws.last_price if ws and ws.last_price > 0 else state["open_positions"][side]["entry_price"]
-        candle = {"close": price, "high": price, "low": price, "open": price, "volume": 0, "timestamp": int(time.time() * 1000)}
+        price = (
+            ws.last_price
+            if ws and ws.last_price > 0
+            else state["open_positions"][side]["entry_price"]
+        )
+        candle = {
+            "close": price,
+            "high": price,
+            "low": price,
+            "open": price,
+            "volume": 0,
+            "timestamp": int(time.time() * 1000),
+        }
         from strategies.mtf_macd import Signal
+
         self._close_position(symbol, side, candle, Signal.FLAT, reason="manual")
         return {"ok": True, "symbol": symbol, "side": side}
 
@@ -1199,10 +1439,14 @@ class TradingBot:
                     open_orders = self.exchange.fetch_open_orders(symbol)
                     for order in open_orders:
                         order_id = order.get("id")
-                        self.logger.warning(f"LIVE: Emergency cancel order {order_id} for {symbol}")
+                        self.logger.warning(
+                            f"LIVE: Emergency cancel order {order_id} for {symbol}"
+                        )
                         self.exchange.cancel_order(order_id, symbol)
                 except Exception as e:
-                    self.logger.error(f"LIVE: Failed to cancel open orders for {symbol}: {e}")
+                    self.logger.error(
+                        f"LIVE: Failed to cancel open orders for {symbol}: {e}"
+                    )
 
             # Close positions for ALL pipelines
             for pipeline in self.pipelines.values():
@@ -1211,14 +1455,18 @@ class TradingBot:
                     for side, pos in list(state["open_positions"].items()):
                         size = pos["size"]
                         opposite_side = "sell" if side == "long" else "buy"
-                        self.logger.warning(f"LIVE [{pipeline.name}]: Emergency market close for {symbol} {side.upper()} size={size}")
+                        self.logger.warning(
+                            f"LIVE [{pipeline.name}]: Emergency market close for {symbol} {side.upper()} size={size}"
+                        )
                         try:
                             if opposite_side == "sell":
                                 self.exchange.create_market_sell_order(symbol, size)
                             else:
                                 self.exchange.create_market_buy_order(symbol, size)
                         except Exception as e:
-                            self.logger.critical(f"LIVE [{pipeline.name}]: Failed emergency close {symbol} {side.upper()}: {e}")
+                            self.logger.critical(
+                                f"LIVE [{pipeline.name}]: Failed emergency close {symbol} {side.upper()}: {e}"
+                            )
 
                 # Clear positions for this pipeline
                 state["open_positions"].clear()
@@ -1236,13 +1484,19 @@ class TradingBot:
         Loads trades with features_json for the 'ml' pipeline, builds training data,
         and retrains the XGBoost model. Returns number of training samples used.
         """
-        import json as _json, sqlite3
+        import json as _json
+        import sqlite3
+
         ml_pipeline = self.pipelines.get("ml")
         if not ml_pipeline or not ml_pipeline.meta_labeler:
             self.logger.warning("MetaLabeler retraining: ML pipeline not available")
             return 0
 
-        db_path = self.config.get("data", {}).get("database", {}).get("path", "./data/trading.db")
+        db_path = (
+            self.config.get("data", {})
+            .get("database", {})
+            .get("path", "./data/trading.db")
+        )
         if not os.path.exists(db_path):
             self.logger.warning(f"MetaLabeler retraining: DB not found at {db_path}")
             return 0
@@ -1263,24 +1517,32 @@ class TradingBot:
                 try:
                     feats = _json.loads(row["features_json"])
                     if feats and len(feats) > 5:
-                        trades.append({
-                            "pnl": row["pnl"] or 0,
-                            "side": row["side"],
-                            "exit_reason": row["exit_reason"],
-                            "strategy": row["strategy"],
-                            "signal_type": "LONG" if row["side"] == "long" else "SHORT",
-                            "features_at_signal": feats,
-                        })
+                        trades.append(
+                            {
+                                "pnl": row["pnl"] or 0,
+                                "side": row["side"],
+                                "exit_reason": row["exit_reason"],
+                                "strategy": row["strategy"],
+                                "signal_type": "LONG"
+                                if row["side"] == "long"
+                                else "SHORT",
+                                "features_at_signal": feats,
+                            }
+                        )
                 except Exception:
                     continue
 
-            self.logger.info(f"MetaLabeler retraining: loaded {len(trades)} trades with features from DB")
+            self.logger.info(
+                f"MetaLabeler retraining: loaded {len(trades)} trades with features from DB"
+            )
         except Exception as e:
             self.logger.error(f"MetaLabeler retraining: DB error: {e}")
             return 0
 
         if len(trades) < 100:
-            self.logger.info(f"MetaLabeler retraining: only {len(trades)} trades (< 100), skipping")
+            self.logger.info(
+                f"MetaLabeler retraining: only {len(trades)} trades (< 100), skipping"
+            )
             return 0
 
         # Train
@@ -1292,7 +1554,7 @@ class TradingBot:
                 f"val_acc={diag['val_accuracy']:.3f}, "
                 f"features={diag['features_used']}"
             )
-            return diag['training_samples']
+            return diag["training_samples"]
         return 0
 
     def reset_circuit_breaker(self):
@@ -1308,14 +1570,19 @@ class TradingBot:
             self.recent_trades_pnl.pop()
             trimmed += 1
         if trimmed:
-            self.logger.info(f"Trimmed {trimmed} losing trade(s) from PnL tail (history preserved: {len(self.recent_trades_pnl)} trades)")
+            self.logger.info(
+                f"Trimmed {trimmed} losing trade(s) from PnL tail (history preserved: {len(self.recent_trades_pnl)} trades)"
+            )
         self.circuit_breaker.reset_manual_halt()
         self.circuit_breaker_alert_sent = False
-        self.telegram.alert("🔄 Circuit breaker manually reset. Bot resumed trading.", force=True)
+        self.telegram.alert(
+            "🔄 Circuit breaker manually reset. Bot resumed trading.", force=True
+        )
 
     def _scheduler_loop(self):
         """Background thread loop: degradation monitoring, retraining, daily/weekly reports."""
         import datetime
+
         self.logger.info("Periodic report scheduler loop started.")
         last_sent_date = None
         last_retrain_month = None  # Track 6-month retraining cycle
@@ -1327,14 +1594,22 @@ class TradingBot:
                 current_month = now.strftime("%Y-%m")
 
                 # ── Periodic MetaLabeler retraining ──
-                ml_labeler = self.pipelines["ml"].meta_labeler if "ml" in self.pipelines else None
-                if (ml_labeler is not None
-                        and current_month != last_retrain_month
-                        and now.month % 6 == 1
-                        and now.day == 1
-                        and now.hour == 2):  # 2 AM on Jan 1st and Jul 1st
+                ml_labeler = (
+                    self.pipelines["ml"].meta_labeler
+                    if "ml" in self.pipelines
+                    else None
+                )
+                if (
+                    ml_labeler is not None
+                    and current_month != last_retrain_month
+                    and now.month % 6 == 1
+                    and now.day == 1
+                    and now.hour == 2
+                ):  # 2 AM on Jan 1st and Jul 1st
                     last_retrain_month = current_month
-                    self.logger.info("Scheduled MetaLabeler retraining (6-month cycle)...")
+                    self.logger.info(
+                        "Scheduled MetaLabeler retraining (6-month cycle)..."
+                    )
                     try:
                         n = self._retrain_meta_labeler_from_db()
                         if n > 0:
@@ -1353,7 +1628,11 @@ class TradingBot:
                         self.telegram.alert(f"[RETRAIN FAILED] {e}", force=True)
 
                 # ── Degradation check + Reports (daily at target hour) ──
-                reports_cfg = self.config.get("monitoring", {}).get("telegram", {}).get("reports", {})
+                reports_cfg = (
+                    self.config.get("monitoring", {})
+                    .get("telegram", {})
+                    .get("reports", {})
+                )
                 if not reports_cfg.get("enabled", False):
                     time.sleep(30)
                     continue
@@ -1369,10 +1648,10 @@ class TradingBot:
                     if last_sent_date != today_str:
                         interval = reports_cfg.get("interval", "both")
                         weekly_day = reports_cfg.get("weekly_day", "Sunday")
-                        
+
                         should_send_daily = False
                         should_send_weekly = False
-                        
+
                         if interval == "daily":
                             should_send_daily = True
                         elif interval == "weekly":
@@ -1385,7 +1664,7 @@ class TradingBot:
                                 should_send_weekly = True
                             else:
                                 should_send_daily = True
-                        
+
                         if should_send_weekly:
                             self.logger.info("Triggering weekly Telegram report...")
                             self._send_periodic_report("weekly")
@@ -1395,7 +1674,9 @@ class TradingBot:
                             self._send_periodic_report("daily")
                             last_sent_date = today_str
             except Exception as e:
-                self.logger.error(f"Error in periodic report scheduler loop: {e}", exc_info=True)
+                self.logger.error(
+                    f"Error in periodic report scheduler loop: {e}", exc_info=True
+                )
 
             time.sleep(30)
 
@@ -1404,10 +1685,14 @@ class TradingBot:
         import sqlite3
         import datetime
         from monitoring.chart_generator import generate_equity_chart
-        
-        db_path = self.config.get("data", {}).get("database", {}).get("path", "./data/trading.db")
+
+        db_path = (
+            self.config.get("data", {})
+            .get("database", {})
+            .get("path", "./data/trading.db")
+        )
         trades = []
-        
+
         if os.path.exists(db_path):
             try:
                 conn = sqlite3.connect(db_path)
@@ -1425,7 +1710,7 @@ class TradingBot:
 
         now = datetime.datetime.now()
         now_ms = int(now.timestamp() * 1000)
-        
+
         if interval == "daily":
             since_ms = now_ms - (24 * 60 * 60 * 1000)
             interval_name = "RAPORT DOBOWY"
@@ -1437,22 +1722,28 @@ class TradingBot:
         period_trades = [t for t in trades if t.get("exit_time", 0) >= since_ms]
         period_pnl = sum(t["pnl"] for t in period_trades if t.get("pnl") is not None)
         period_trade_count = len(period_trades)
-        
+
         period_wins = [t for t in period_trades if t.get("pnl", 0.0) > 0]
-        period_win_rate = (len(period_wins) / period_trade_count * 100) if period_trade_count > 0 else 0.0
-        
+        period_win_rate = (
+            (len(period_wins) / period_trade_count * 100)
+            if period_trade_count > 0
+            else 0.0
+        )
+
         # Per symbol statistics in the period
         symbol_stats = {}
         for t in period_trades:
             strat = t.get("strategy", "")
             # Extract symbol: e.g. mtf_macd:BTC/USDT:USDT -> BTC/USDT
-            symbol = strat.split(":", 1)[1].split(":")[0] if ":" in strat else "BTC/USDT"
-            
+            symbol = (
+                strat.split(":", 1)[1].split(":")[0] if ":" in strat else "BTC/USDT"
+            )
+
             if symbol not in symbol_stats:
                 symbol_stats[symbol] = {"pnl": 0.0, "count": 0}
             symbol_stats[symbol]["pnl"] += t.get("pnl", 0.0)
             symbol_stats[symbol]["count"] += 1
-            
+
         # Format per-symbol breakdown
         symbols_summary = ""
         if symbol_stats:
@@ -1460,27 +1751,31 @@ class TradingBot:
             for sym, stat in symbol_stats.items():
                 pnl_val = stat["pnl"]
                 sign = "+" if pnl_val >= 0 else ""
-                symbols_summary += f"• `{sym}`: *{sign}${pnl_val:,.2f}* ({stat['count']} trans.)\n"
+                symbols_summary += (
+                    f"• `{sym}`: *{sign}${pnl_val:,.2f}* ({stat['count']} trans.)\n"
+                )
         else:
             symbols_summary = "\n*Brak zamkniętych transakcji w tym okresie.*\n"
-            
+
         # Get overall stats from risk monitor
         current_equity = self.equity
         current_balance = self.balance
-        
+
         current_dd = 0.0
         if hasattr(self, "risk_monitor") and self.risk_monitor:
             snap = self.risk_monitor.snapshot()
             current_dd = snap.get("current_drawdown_pct", 0.0)
-            
+
         starting_capital = current_equity - period_pnl
         if starting_capital <= 0:
             starting_capital = self.initial_capital
-        period_return_pct = (period_pnl / starting_capital * 100) if starting_capital > 0 else 0.0
-        
+        period_return_pct = (
+            (period_pnl / starting_capital * 100) if starting_capital > 0 else 0.0
+        )
+
         pnl_sign = "+" if period_pnl >= 0 else ""
         emoji = "📈" if period_pnl >= 0 else "📉"
-        
+
         message = (
             f"{emoji} *{interval_name} ({now.strftime('%d.%m.%Y %H:%M')})*\n\n"
             f"💰 *Stan konta (Equity):* `${current_equity:,.2f}`\n"
@@ -1491,47 +1786,52 @@ class TradingBot:
             f"🎯 *Win Rate okresu:* `{period_win_rate:.1f}%`\n"
             f"{symbols_summary}"
         )
-        
+
         # Build full equity series from all trades to show overall history
         equity_series = [self.initial_capital]
         for t in trades:
             pnl_val = t.get("pnl", 0.0)
             equity_series.append(equity_series[-1] + pnl_val)
-            
+
         if len(equity_series) == 1:
             equity_series.append(equity_series[0])
-            
+
         chart_dir = self.config.get("paths", {}).get("logs_dir", "./logs")
         os.makedirs(chart_dir, exist_ok=True)
         chart_path = os.path.join(chart_dir, "equity_curve.png")
-        
+
         chart_generated = generate_equity_chart(equity_series, chart_path)
-        
+
         if chart_generated and os.path.exists(chart_path):
             try:
                 with open(chart_path, "rb") as f:
                     photo_bytes = f.read()
                 self.telegram.send_photo(photo_bytes, caption=message)
-                self.logger.info(f"Periodic report with chart sent to Telegram.")
+                self.logger.info("Periodic report with chart sent to Telegram.")
             except Exception as e:
-                self.logger.error(f"Failed to send periodic report photo to Telegram: {e}")
+                self.logger.error(
+                    f"Failed to send periodic report photo to Telegram: {e}"
+                )
                 self.telegram.alert(message, force=True)
         else:
             self.telegram.alert(message, force=True)
 
 
-
 def main():
     """Entry point."""
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="bocik — BTC Trading Bot")
-    parser.add_argument("--config", default="config/settings.yaml", help="Config file path")
-    parser.add_argument("--mode", choices=["paper", "live", "backtest"], help="Override mode")
+    parser.add_argument(
+        "--config", default="config/settings.yaml", help="Config file path"
+    )
+    parser.add_argument(
+        "--mode", choices=["paper", "live", "backtest"], help="Override mode"
+    )
     args = parser.parse_args()
-    
+
     bot = TradingBot(args.config)
-    
+
     try:
         bot.start()
         # Keep alive (in production, WebSocket callbacks handle this)

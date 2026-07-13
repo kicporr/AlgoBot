@@ -17,7 +17,10 @@ Exit codes:
     1 — unhealthy (bot down or error)
 """
 
-import os, sys, time, json
+import os
+import sys
+import time
+import json
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -48,13 +51,17 @@ def send_telegram(message: str):
         return
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-        data = json.dumps({
-            "chat_id": CHAT_ID,
-            "text": message,
-            "parse_mode": "Markdown",
-            "disable_web_page_preview": True,
-        }).encode()
-        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+        data = json.dumps(
+            {
+                "chat_id": CHAT_ID,
+                "text": message,
+                "parse_mode": "Markdown",
+                "disable_web_page_preview": True,
+            }
+        ).encode()
+        req = urllib.request.Request(
+            url, data=data, headers={"Content-Type": "application/json"}
+        )
         urllib.request.urlopen(req, timeout=10)
     except Exception as e:
         print(f"[watchdog] Telegram send failed: {e}")
@@ -95,17 +102,23 @@ def run_once():
     if prev is None:
         write_state(current)
         if not healthy:
-            send_telegram("🚨 *bocik — PIERWSZY ALERT*\nBot nie odpowiada na health check!\nSprawdź `orchestrator.py` lub połączenie.")
+            send_telegram(
+                "🚨 *bocik — PIERWSZY ALERT*\nBot nie odpowiada na health check!\nSprawdź `orchestrator.py` lub połączenie."
+            )
         return healthy
 
     if prev == "up" and current == "down":
         write_state(current)
-        send_telegram("🔴 *bocik — NIEDOSTĘPNY*\nBot przestał odpowiadać na health check.\nSprawdź logi i połączenie z serwerem.")
+        send_telegram(
+            "🔴 *bocik — NIEDOSTĘPNY*\nBot przestał odpowiadać na health check.\nSprawdź logi i połączenie z serwerem."
+        )
         return False
 
     if prev == "down" and current == "up":
         write_state(current)
-        send_telegram("🟢 *bocik — ODZYSKANY*\nBot znowu odpowiada. Połączenie przywrócone.")
+        send_telegram(
+            "🟢 *bocik — ODZYSKANY*\nBot znowu odpowiada. Połączenie przywrócone."
+        )
         return True
 
     # No change — silent
@@ -128,7 +141,9 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="bocik health watchdog")
-    parser.add_argument("--loop", type=int, default=0, help="Run continuously, check every N seconds")
+    parser.add_argument(
+        "--loop", type=int, default=0, help="Run continuously, check every N seconds"
+    )
     parser.add_argument("--url", type=str, default=None, help="Health URL override")
     args = parser.parse_args()
 
