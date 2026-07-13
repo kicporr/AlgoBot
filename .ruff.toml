@@ -6,4 +6,4 @@ ignore = ["E501", "E402"]
 quote-style = "double"
 indent-style = "space"
 
-exclude = ["research/", "notebooks/", ".rtk/"]
+exclude = ["research/", "notebooks/", ".rtk/", "*.ipynb"]

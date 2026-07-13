@@ -5,5 +5,8 @@ repos:
       # Lint (fast, checks for errors and code smells)
       - id: ruff
         args: [--config, .ruff.toml]
+        exclude: \.ipynb$
+      - id: ruff-format
+        exclude: \.ipynb$
       # Format (replaces black, isort, pyupgrade)
       - id: ruff-format
