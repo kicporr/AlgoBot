@@ -1,6 +1,13 @@
-# bocik Monitoring Stack — Prometheus + Grafana
-# Usage: docker compose -f docker/docker-compose.monitoring.yml up -d
-# Requires: bocik bot running on host port 8088
+# ============================================================
+# bocik — Monitoring Stack (Prometheus + Grafana)
+# ============================================================
+# Start AFTER the bot is running:
+#   docker compose -f docker/docker-compose.monitoring.yml up -d
+#
+# Access:
+#   Prometheus: http://localhost:9090
+#   Grafana:    http://localhost:3000 (admin/admin)
+# ============================================================
 
 version: "3.8"
 
@@ -24,8 +31,9 @@ services:
     image: grafana/grafana:latest
     container_name: bocik-grafana
     environment:
+      - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_INSTALL_PLUGINS=
+      - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana_data:/var/lib/grafana

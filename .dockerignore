@@ -1,0 +1,41 @@
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Virtual env
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# Node (dashboard source)
+dashboard-react/
+node_modules/
+
+# Research & notebooks
+research/
+notebooks/
+
+# Tests
+tests/
+
+# Docker
+docker/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp
+*.tmp
+*.log

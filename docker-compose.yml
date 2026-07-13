@@ -1,5 +1,16 @@
 # ============================================================
-# bocik — Docker Compose (Linux server deployment)
+# bocik — Production Docker Compose
+# ============================================================
+#
+# Usage:
+#   docker compose up -d              # Start bot (paper mode)
+#   docker compose up -d --build      # Rebuild + start
+#   docker compose logs -f bot        # Follow bot logs
+#   docker compose ps                 # Check status
+#
+# Live mode:
+#   docker compose run --rm bot python orchestrator.py --mode live
+#
 # ============================================================
 
 version: "3.8"
@@ -13,11 +24,30 @@ services:
       - ./config/.env
     environment:
       - TZ=Europe/Warsaw
+      - DASHBOARD_TOKEN=${DASHBOARD_TOKEN:-}
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./config:/app/config:ro
     ports:
-      - "8088:8088"   # Dashboard
-    # Default: paper trading. Uncomment for live:
-    # command: python orchestrator.py --mode live
+      - "8088:8088"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8088/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  watchdog:
+    build: .
+    container_name: bocik-watchdog
+    restart: unless-stopped
+    command: python scripts/watchdog.py --loop 120
+    env_file:
+      - ./config/.env
+    environment:
+      - TZ=Europe/Warsaw
+      - HEALTH_URL=http://bot:8088/api/health
+    depends_on:
+      bot:
+        condition: service_healthy

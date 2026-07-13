@@ -1,22 +1,17 @@
 # ============================================================
-# bocik — Docker image (Linux x86_64)
+# bocik — Production Docker image (multi-stage, Linux x86_64)
 # ============================================================
 
-FROM python:3.12-slim
+FROM python:3.12-slim AS builder
 
-LABEL name="bocik"
-LABEL description="Multi-asset algorithmic trading bot — 1H/4H"
+WORKDIR /build
 
-WORKDIR /app
-
-# System dependencies
+# System deps for TA-Lib build
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    wget \
-    libgomp1 \
+    build-essential wget libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-# TA-Lib (C library) — single-thread build to avoid race condition
+# TA-Lib C library — single-thread to avoid race condition on ARM/SBC
 RUN wget -q http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz \
     && tar -xzf ta-lib-0.4.0-src.tar.gz \
     && cd ta-lib/ \
@@ -26,17 +21,49 @@ RUN wget -q http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz \
     && cd .. \
     && rm -rf ta-lib ta-lib-0.4.0-src.tar.gz
 
-# Python deps (lightweight runtime-only set)
+# ── Runtime Stage ────────────────────────────────────────────
+
+FROM python:3.12-slim
+
+LABEL name="bocik"
+LABEL description="Multi-asset algorithmic trading bot"
+
+WORKDIR /app
+
+# Copy TA-Lib from builder
+COPY --from=builder /usr/lib/libta_lib* /usr/lib/
+COPY --from=builder /usr/include/ta-lib/ /usr/include/ta-lib/
+
+# Runtime system deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgomp1 curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && ldconfig
+
+# Python deps (runtime-only, no training/backtesting libs)
 COPY requirements-docker.txt .
 RUN pip install --no-cache-dir -r requirements-docker.txt
 
-# App code
-COPY . .
+# App code (config + models + scripts)
+COPY config/ config/
+COPY models/ models/
+COPY data/ data/
+COPY dashboard/ dashboard/
+COPY features/ features/
+COPY strategies/ strategies/
+COPY ensemble/ ensemble/
+COPY risk/ risk/
+COPY execution/ execution/
+COPY backtest/ backtest/
+COPY monitoring/ monitoring/
+COPY ml/ ml/
+COPY scripts/ scripts/
+COPY orchestrator.py .
+COPY __init__.py .
 
 # Default: paper trading (safe)
 CMD ["python", "orchestrator.py", "--mode", "paper"]
 
-# Health check: dashboard /api/status must respond within 10s
-# Bot restart if 3 consecutive checks fail
-HEALTHCHECK --interval=60s --timeout=10s --retries=3 --start-period=120s \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8088/api/status', timeout=5)" || exit 1
+# Health check: lightweight endpoint, no DB queries
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=60s \
+    CMD curl -sf http://localhost:8088/api/health || exit 1
