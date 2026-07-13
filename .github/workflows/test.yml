@@ -1,0 +1,70 @@
+name: Test & Lint
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }} — ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ['3.11', '3.12']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libta-lib0 ta-lib0-dev
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff
+
+      - name: Verify install
+        run: |
+          python -c "import ccxt; print('ccxt', ccxt.__version__)"
+          python -c "import pandas; print('pandas', pandas.__version__)"
+          python -c "import numpy; print('numpy', numpy.__version__)"
+          python -c "import talib; print('ta-lib OK')"
+          python -c "import xgboost; print('xgboost', xgboost.__version__)"
+
+      - name: Run tests
+        run: python -m pytest tests/ -q --tb=short
+
+      - name: Store test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.python-version }}
+          path: .pytest_cache/
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - run: pip install ruff
+
+      - name: Ruff check
+        run: ruff check --select E,F,W --ignore E501,E402,W503 .
