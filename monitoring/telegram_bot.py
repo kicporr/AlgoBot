@@ -44,7 +44,9 @@ class TelegramAlerter:
 
         # Micro-queue: accumulate dropped alerts, send as summary when interval allows
         self._dropped_count = 0
-        self._dropped_types: dict[str, int] = {}  # e.g. {"trade_close": 3, "risk_snapshot": 1}
+        self._dropped_types: dict[
+            str, int
+        ] = {}  # e.g. {"trade_close": 3, "risk_snapshot": 1}
 
         if self.enabled:
             logger.info(f"Telegram bot enabled (chat={self.chat_id})")
@@ -64,13 +66,18 @@ class TelegramAlerter:
             return
 
         import time
+
         with self._lock:
             now = time.monotonic()
             if not force and (now - self._last_send) < self.min_interval:
                 self._dropped_count += 1
                 if category:
-                    self._dropped_types[category] = self._dropped_types.get(category, 0) + 1
-                logger.debug(f"[TG] Rate-limited drop (total dropped: {self._dropped_count}): {message[:80]}...")
+                    self._dropped_types[category] = (
+                        self._dropped_types.get(category, 0) + 1
+                    )
+                logger.debug(
+                    f"[TG] Rate-limited drop (total dropped: {self._dropped_count}): {message[:80]}..."
+                )
                 return
 
             # Flush any pending dropped-count summary before sending new message
@@ -87,15 +94,22 @@ class TelegramAlerter:
             return ""
         summary = f"[TG] {self._dropped_count} alert(s) suppressed (rate limit)"
         if self._dropped_types:
-            detail = ", ".join(f"{k}:{v}" for k, v in sorted(self._dropped_types.items()))
+            detail = ", ".join(
+                f"{k}:{v}" for k, v in sorted(self._dropped_types.items())
+            )
             summary += f" [{detail}]"
         self._dropped_count = 0
         self._dropped_types.clear()
         return summary
 
     def trade_open(
-        self, side: str, price: float, size: float,
-        strategy: str, regime: str, equity: float = 0,
+        self,
+        side: str,
+        price: float,
+        size: float,
+        strategy: str,
+        regime: str,
+        equity: float = 0,
     ):
         """Notify about a new trade entry."""
         emoji = "📈" if side == "long" else "📉"
@@ -111,8 +125,12 @@ class TelegramAlerter:
         self.alert(msg)
 
     def trade_close(
-        self, side: str, pnl: float, pnl_pct: float,
-        reason: str, equity: float = 0,
+        self,
+        side: str,
+        pnl: float,
+        pnl_pct: float,
+        reason: str,
+        equity: float = 0,
     ):
         """Notify about a trade exit."""
         emoji = "✅" if pnl > 0 else "❌"
@@ -193,7 +211,9 @@ class TelegramAlerter:
             resp = requests.post(url, data=data, files=files, timeout=15)
             res_json = resp.json()
             if not res_json.get("ok"):
-                logger.warning(f"Telegram send photo failed: {res_json.get('description', 'unknown')}")
+                logger.warning(
+                    f"Telegram send photo failed: {res_json.get('description', 'unknown')}"
+                )
         except requests.RequestException as e:
             logger.warning(f"Telegram send photo error: {e}")
         except Exception as e:
@@ -214,7 +234,9 @@ class TelegramAlerter:
             resp = requests.post(url, json=payload, timeout=10)
             data = resp.json()
             if not data.get("ok"):
-                logger.warning(f"Telegram send failed: {data.get('description', 'unknown')}")
+                logger.warning(
+                    f"Telegram send failed: {data.get('description', 'unknown')}"
+                )
         except requests.RequestException as e:
             logger.warning(f"Telegram send error: {e}")
         except Exception as e:

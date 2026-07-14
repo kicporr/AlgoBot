@@ -47,7 +47,9 @@ class FeatureEngine:
         self.min_bars_required = feat_cfg.get("min_bars_required", 50)
 
         # MACD parameters for trend features
-        macd_cfg = config.get("strategies", {}).get("mtf_macd_elder", {}).get("macd", {})
+        macd_cfg = (
+            config.get("strategies", {}).get("mtf_macd_elder", {}).get("macd", {})
+        )
         if not macd_cfg:
             macd_cfg = config.get("features", {}).get("macd", {})
         self.macd_fast = macd_cfg.get("fast", 12)
@@ -59,9 +61,15 @@ class FeatureEngine:
 
         # Rolling cache: {timeframe: DataFrame}
         self._cache: dict[str, pd.DataFrame] = {
-            "1h": pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume"]),
-            "4h": pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume"]),
-            "1d": pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume"]),
+            "1h": pd.DataFrame(
+                columns=["timestamp", "open", "high", "low", "close", "volume"]
+            ),
+            "4h": pd.DataFrame(
+                columns=["timestamp", "open", "high", "low", "close", "volume"]
+            ),
+            "1d": pd.DataFrame(
+                columns=["timestamp", "open", "high", "low", "close", "volume"]
+            ),
         }
 
         # Track which features were computed (for consistent ordering)
@@ -129,14 +137,10 @@ class FeatureEngine:
 
         # Multi-TF features
         if df_4h is not None and not df_4h.empty:
-            features = self._add_multitf_features(
-                features, df_1h, df_4h, "4h"
-            )
+            features = self._add_multitf_features(features, df_1h, df_4h, "4h")
 
         if df_1d is not None and not df_1d.empty:
-            features = self._add_multitf_features(
-                features, df_1h, df_1d, "1d"
-            )
+            features = self._add_multitf_features(features, df_1h, df_1d, "1d")
 
         self.feature_names = list(features.columns)
         return features
@@ -213,7 +217,9 @@ class FeatureEngine:
     def _add_trend_features(self, f, o, h, l, c):
         """3. Trend features (12)."""
         # MACD family
-        macd_line, macd_signal, macd_hist = self.indicators.macd(c, self.macd_fast, self.macd_slow, self.macd_signal)
+        macd_line, macd_signal, macd_hist = self.indicators.macd(
+            c, self.macd_fast, self.macd_slow, self.macd_signal
+        )
         f["macd"] = macd_line
         f["macd_signal"] = macd_signal
         f["macd_hist"] = macd_hist
@@ -287,9 +293,15 @@ class FeatureEngine:
     def _add_structure_features(self, f, o, h, l, c):
         """7. Market structure features (8)."""
         # Distance from moving averages
-        f["dist_sma_20"] = (c - self.indicators.sma(c, 20)) / (self.indicators.sma(c, 20) + 1e-12)
-        f["dist_sma_50"] = (c - self.indicators.sma(c, 50)) / (self.indicators.sma(c, 50) + 1e-12)
-        f["dist_sma_200"] = (c - self.indicators.sma(c, 200)) / (self.indicators.sma(c, 200) + 1e-12)
+        f["dist_sma_20"] = (c - self.indicators.sma(c, 20)) / (
+            self.indicators.sma(c, 20) + 1e-12
+        )
+        f["dist_sma_50"] = (c - self.indicators.sma(c, 50)) / (
+            self.indicators.sma(c, 50) + 1e-12
+        )
+        f["dist_sma_200"] = (c - self.indicators.sma(c, 200)) / (
+            self.indicators.sma(c, 200) + 1e-12
+        )
 
         # Rolling max/min
         f["high_20"] = h.rolling(20).max()
@@ -320,15 +332,9 @@ class FeatureEngine:
             return features
 
         # Get the last higher-TF candle before each 1H timestamp
-        c_ht = df_higher["close"].reindex(
-            df_1h.index, method="ffill"
-        )
-        h_ht = df_higher["high"].reindex(
-            df_1h.index, method="ffill"
-        )
-        l_ht = df_higher["low"].reindex(
-            df_1h.index, method="ffill"
-        )
+        c_ht = df_higher["close"].reindex(df_1h.index, method="ffill")
+        h_ht = df_higher["high"].reindex(df_1h.index, method="ffill")
+        l_ht = df_higher["low"].reindex(df_1h.index, method="ffill")
 
         c_1h = df_1h["close"]
 
@@ -347,14 +353,18 @@ class FeatureEngine:
     def _append_to_cache(self, timeframe: str, candle: dict):
         """Add a candle to the rolling cache DataFrame."""
         df = self._cache[timeframe]
-        new_row = pd.DataFrame([{
-            "timestamp": candle["timestamp"],
-            "open": candle["open"],
-            "high": candle["high"],
-            "low": candle["low"],
-            "close": candle["close"],
-            "volume": candle["volume"],
-        }])
+        new_row = pd.DataFrame(
+            [
+                {
+                    "timestamp": candle["timestamp"],
+                    "open": candle["open"],
+                    "high": candle["high"],
+                    "low": candle["low"],
+                    "close": candle["close"],
+                    "volume": candle["volume"],
+                }
+            ]
+        )
 
         # Avoid duplicates
         if not df.empty and candle["timestamp"] in df["timestamp"].values:
@@ -364,18 +374,24 @@ class FeatureEngine:
 
         # Prune
         if len(df) > self.max_window:
-            df = df.iloc[-self.max_window:]
+            df = df.iloc[-self.max_window :]
 
         self._cache[timeframe] = df
 
     def prime_cache(self, df_1h: pd.DataFrame, df_4h=None, df_1d=None):
         """Initialize the rolling cache with historical data."""
         required_cols = ["timestamp", "open", "high", "low", "close", "volume"]
-        self._cache["1h"] = df_1h[required_cols].tail(self.max_window).reset_index(drop=True)
+        self._cache["1h"] = (
+            df_1h[required_cols].tail(self.max_window).reset_index(drop=True)
+        )
         if df_4h is not None:
-            self._cache["4h"] = df_4h[required_cols].tail(self.max_window).reset_index(drop=True)
+            self._cache["4h"] = (
+                df_4h[required_cols].tail(self.max_window).reset_index(drop=True)
+            )
         if df_1d is not None:
-            self._cache["1d"] = df_1d[required_cols].tail(self.max_window).reset_index(drop=True)
+            self._cache["1d"] = (
+                df_1d[required_cols].tail(self.max_window).reset_index(drop=True)
+            )
 
     def get_feature_names(self) -> list[str]:
         """Return the ordered list of feature names from the last computation."""

@@ -45,13 +45,15 @@ class BitgetRESTClient:
             passphrase = config.get("BITGET_PASSPHRASE", "")
 
             ex_type = ex_cfg.get("type", "spot")
-            self.exchange = ccxt.bitget({
-                "apiKey": api_key,
-                "secret": secret,
-                "password": passphrase,
-                "enableRateLimit": True,
-                "options": {"defaultType": ex_type},
-            })
+            self.exchange = ccxt.bitget(
+                {
+                    "apiKey": api_key,
+                    "secret": secret,
+                    "password": passphrase,
+                    "enableRateLimit": True,
+                    "options": {"defaultType": ex_type},
+                }
+            )
             self._shared = False
 
         logger.info(
@@ -106,14 +108,16 @@ class BitgetRESTClient:
 
         candles = []
         for row in raw:
-            candles.append({
-                "timestamp": int(row[0]),
-                "open": float(row[1]),
-                "high": float(row[2]),
-                "low": float(row[3]),
-                "close": float(row[4]),
-                "volume": float(row[5]),
-            })
+            candles.append(
+                {
+                    "timestamp": int(row[0]),
+                    "open": float(row[1]),
+                    "high": float(row[2]),
+                    "low": float(row[3]),
+                    "close": float(row[4]),
+                    "volume": float(row[5]),
+                }
+            )
 
         return candles
 
@@ -156,8 +160,10 @@ class BitgetRESTClient:
         while True:
             # Bitget: limit=100 gives proper pagination; 200+ ignores 'since'
             batch = self.fetch_ohlcv(
-                symbol=symbol, timeframe=timeframe,
-                since_ms=current_since, limit=100,
+                symbol=symbol,
+                timeframe=timeframe,
+                since_ms=current_since,
+                limit=100,
             )
 
             if not batch:
@@ -190,37 +196,51 @@ class BitgetRESTClient:
         if unique:
             logger.info(
                 f"Fetched {len(unique)} {timeframe} candles "
-                f"({datetime.fromtimestamp(unique[0]['timestamp']/1000, tz=timezone.utc)}"
-                f" → {datetime.fromtimestamp(unique[-1]['timestamp']/1000, tz=timezone.utc)})"
+                f"({datetime.fromtimestamp(unique[0]['timestamp'] / 1000, tz=timezone.utc)}"
+                f" → {datetime.fromtimestamp(unique[-1]['timestamp'] / 1000, tz=timezone.utc)})"
             )
 
         return unique
 
     # ─── Convenience Methods ────────────────────────────────────
 
-    def fetch_recent(self, timeframe: str = "1m", hours: int = 24, symbol: str = None) -> list[dict]:
+    def fetch_recent(
+        self, timeframe: str = "1m", hours: int = 24, symbol: str = None
+    ) -> list[dict]:
         """Fetch recent N hours of candle data."""
         now_ms = int(time.time() * 1000)
         start_ms = now_ms - (hours * 3_600_000)
-        return self.fetch_ohlcv_range(symbol=symbol, timeframe=timeframe, start_ms=start_ms, end_ms=now_ms)
+        return self.fetch_ohlcv_range(
+            symbol=symbol, timeframe=timeframe, start_ms=start_ms, end_ms=now_ms
+        )
 
-    def fetch_days(self, timeframe: str = "1h", days: int = 30, symbol: Optional[str] = None) -> pd.DataFrame:
+    def fetch_days(
+        self, timeframe: str = "1h", days: int = 30, symbol: Optional[str] = None
+    ) -> pd.DataFrame:
         """Fetch N days as DataFrame."""
         now_ms = int(time.time() * 1000)
         start_ms = now_ms - (days * 86_400_000)
-        candles = self.fetch_ohlcv_range(symbol=symbol, timeframe=timeframe, start_ms=start_ms, end_ms=now_ms)
+        candles = self.fetch_ohlcv_range(
+            symbol=symbol, timeframe=timeframe, start_ms=start_ms, end_ms=now_ms
+        )
         if not candles:
             return pd.DataFrame(columns=CCXT_OHLCV_COLUMNS)
         df = pd.DataFrame(candles)
         df["timestamp"] = df["timestamp"].astype("int64")
         return df
 
-    def fetch_since(self, timeframe: str = "1h", since_date: str = "2018-12-01") -> pd.DataFrame:
+    def fetch_since(
+        self, timeframe: str = "1h", since_date: str = "2018-12-01"
+    ) -> pd.DataFrame:
         """Fetch all data since a given date."""
-        since_dt = datetime.strptime(since_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        since_dt = datetime.strptime(since_date, "%Y-%m-%d").replace(
+            tzinfo=timezone.utc
+        )
         start_ms = int(since_dt.timestamp() * 1000)
         now_ms = int(time.time() * 1000)
-        candles = self.fetch_ohlcv_range(timeframe=timeframe, start_ms=start_ms, end_ms=now_ms)
+        candles = self.fetch_ohlcv_range(
+            timeframe=timeframe, start_ms=start_ms, end_ms=now_ms
+        )
         if not candles:
             return pd.DataFrame(columns=CCXT_OHLCV_COLUMNS)
         df = pd.DataFrame(candles)
@@ -230,15 +250,19 @@ class BitgetRESTClient:
     # ─── Backfill ───────────────────────────────────────────────
 
     def backfill_gaps(
-        self, existing_timestamps: set[int],
-        timeframe: str = "1m", lookback_hours: int = 24,
+        self,
+        existing_timestamps: set[int],
+        timeframe: str = "1m",
+        lookback_hours: int = 24,
     ) -> list[dict]:
         """Find and fetch missing candles."""
         now_ms = int(time.time() * 1000)
         start_ms = now_ms - (lookback_hours * 3_600_000)
 
         all_candles = self.fetch_ohlcv_range(
-            timeframe=timeframe, start_ms=start_ms, end_ms=now_ms,
+            timeframe=timeframe,
+            start_ms=start_ms,
+            end_ms=now_ms,
         )
 
         missing = [c for c in all_candles if c["timestamp"] not in existing_timestamps]

@@ -131,7 +131,7 @@ tr:hover td{background:rgba(255,255,255,.008)}
 .btn-a{border-color:var(--accent);color:var(--accent);background:rgba(91,141,238,.08)}
 
 /* ═══════════════ EQUITY CHART ═══════════════ */
-.chart-wrap{height:160px;padding:4px;flex-shrink:0}
+.chart-wrap{height:228px;padding:4px;flex-shrink:0}
 #equity-canvas{width:100%;height:100%;display:block}
 
 /* ═══════════════ MODAL ═══════════════ */

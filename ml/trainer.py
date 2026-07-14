@@ -28,21 +28,26 @@ class WalkForwardTrainer:
 
     def __init__(self, config: dict):
         ml_cfg = config.get("strategies", {}).get("xgboost_cost_aware", {})
-        self.model_params = ml_cfg.get("model_params", {
-            "n_estimators": 200,
-            "max_depth": 5,
-            "learning_rate": 0.05,
-            "subsample": 0.8,
-            "colsample_bytree": 0.8,
-            "reg_alpha": 1.0,
-            "reg_lambda": 1.0,
-            "random_state": 42,
-        })
+        self.model_params = ml_cfg.get(
+            "model_params",
+            {
+                "n_estimators": 200,
+                "max_depth": 5,
+                "learning_rate": 0.05,
+                "subsample": 0.8,
+                "colsample_bytree": 0.8,
+                "reg_alpha": 1.0,
+                "reg_lambda": 1.0,
+                "random_state": 42,
+            },
+        )
 
         train_cfg = ml_cfg.get("training", {})
         self.n_folds = train_cfg.get("walk_forward_folds", 27)
         self.min_train_samples = train_cfg.get("min_train_samples", 500)
-        self.target_type = train_cfg.get("target_type", "classification")  # or "regression"
+        self.target_type = train_cfg.get(
+            "target_type", "classification"
+        )  # or "regression"
         self.retrain_every = train_cfg.get("retrain_every_candles", 500)
 
         # Model storage
@@ -73,8 +78,13 @@ class WalkForwardTrainer:
         mask = future_close.notna()
         return y, mask
 
-    def train(self, X: pd.DataFrame, y: pd.Series,
-              X_val: pd.DataFrame = None, y_val: pd.Series = None) -> xgb.XGBClassifier:
+    def train(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        X_val: pd.DataFrame = None,
+        y_val: pd.Series = None,
+    ) -> xgb.XGBClassifier:
         """Train an XGBoost classifier on features X and target y.
 
         Args:
@@ -136,7 +146,7 @@ class WalkForwardTrainer:
         X = X.replace([np.inf, -np.inf], np.nan).fillna(0)
 
         # Ensure columns match training
-        if hasattr(model, 'feature_names_in_'):
+        if hasattr(model, "feature_names_in_"):
             for col in model.feature_names_in_:
                 if col not in X.columns:
                     X[col] = 0.0
@@ -190,18 +200,24 @@ class WalkForwardTrainer:
 
             precision = tp / (tp + fp) if (tp + fp) > 0 else 0
             recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-            f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+            f1 = (
+                2 * precision * recall / (precision + recall)
+                if (precision + recall) > 0
+                else 0
+            )
 
-            fold_results.append({
-                "fold": fold,
-                "train_n": len(X_train),
-                "test_n": len(X_test),
-                "accuracy": round(accuracy, 4),
-                "precision": round(precision, 4),
-                "recall": round(recall, 4),
-                "f1": round(f1, 4),
-                "model": model,
-            })
+            fold_results.append(
+                {
+                    "fold": fold,
+                    "train_n": len(X_train),
+                    "test_n": len(X_test),
+                    "accuracy": round(accuracy, 4),
+                    "precision": round(precision, 4),
+                    "recall": round(recall, 4),
+                    "f1": round(f1, 4),
+                    "model": model,
+                }
+            )
 
             logger.debug(
                 f"Fold {fold}: acc={accuracy:.3f} prec={precision:.3f} "

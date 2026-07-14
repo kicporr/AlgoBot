@@ -5,6 +5,7 @@ Uses actual feature names from FeatureEngine output.
 
 import sys
 import os
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
@@ -23,12 +24,20 @@ class TestMTF_MACD:
     @staticmethod
     def _make_strategy(config_overrides=None):
         from strategies.mtf_macd import MTF_MACD_Elder
+
         config = {
             "strategies": {
                 "mtf_macd_elder": {
                     "macd": {"fast": 12, "slow": 26, "signal": 9},
-                    "exit": {"trailing_stop_pct": 0.03, "atr_stop_mult": 2.0, "min_hold_bars": 1},
-                    "elder_filter": {"require_volume_confirm": False, "allow_shorts": True},
+                    "exit": {
+                        "trailing_stop_pct": 0.03,
+                        "atr_stop_mult": 2.0,
+                        "min_hold_bars": 1,
+                    },
+                    "elder_filter": {
+                        "require_volume_confirm": False,
+                        "allow_shorts": True,
+                    },
                 }
             }
         }
@@ -55,10 +64,15 @@ class TestMTF_MACD:
         strategy = self._make_strategy()
         strategy.d1_trend = "UP"
 
-        features = pd.Series({
-            "macd_cross": 1, "macd": 150, "macd_signal": 100,
-            "macd_hist": 50, "volume_sma_ratio": 1.5,
-        })
+        features = pd.Series(
+            {
+                "macd_cross": 1,
+                "macd": 150,
+                "macd_signal": 100,
+                "macd_hist": 50,
+                "volume_sma_ratio": 1.5,
+            }
+        )
         candle = {"close": 50000, "open": 49900}
 
         signal = strategy.on_candle(candle, features)
@@ -71,10 +85,15 @@ class TestMTF_MACD:
         strategy = self._make_strategy()
         strategy.d1_trend = "DOWN"
 
-        features = pd.Series({
-            "macd_cross": -1, "macd": 100, "macd_signal": 150,
-            "macd_hist": -50, "volume_sma_ratio": 1.5,
-        })
+        features = pd.Series(
+            {
+                "macd_cross": -1,
+                "macd": 100,
+                "macd_signal": 150,
+                "macd_hist": -50,
+                "volume_sma_ratio": 1.5,
+            }
+        )
         candle = {"close": 50000, "open": 49900}
 
         signal = strategy.on_candle(candle, features)
@@ -115,15 +134,25 @@ class TestMTF_MACD:
 
     def test_volume_filter_blocks_entry(self):
         """When volume filter is enabled and volume is low → no entry."""
-        strategy = self._make_strategy({
-            "elder_filter": {"require_volume_confirm": True, "volume_mult": 1.2, "allow_shorts": True},
-        })
+        strategy = self._make_strategy(
+            {
+                "elder_filter": {
+                    "require_volume_confirm": True,
+                    "volume_mult": 1.2,
+                    "allow_shorts": True,
+                },
+            }
+        )
         strategy.d1_trend = "UP"
 
-        features = pd.Series({
-            "macd_cross": 1, "macd": 150, "macd_signal": 100,
-            "volume_sma_ratio": 0.8,  # Below 1.2 threshold
-        })
+        features = pd.Series(
+            {
+                "macd_cross": 1,
+                "macd": 150,
+                "macd_signal": 100,
+                "volume_sma_ratio": 0.8,  # Below 1.2 threshold
+            }
+        )
         candle = {"close": 50000}
 
         signal = strategy.on_candle(candle, features)
@@ -167,10 +196,10 @@ class TestMTF_MACD:
 
 
 class TestMeanReversion:
-
     @staticmethod
     def _make_strategy(config_overrides=None):
         from strategies.mean_reversion import MeanReversion
+
         config = {
             "strategies": {
                 "mean_reversion": {
@@ -234,14 +263,16 @@ class TestBacktestIntegration:
         lows = np.minimum(open_vals, close) * (1 - rng.uniform(0.001, 0.01, n_bars))
         volumes = rng.uniform(50, 200, n_bars)
 
-        return pd.DataFrame({
-            "timestamp": timestamps,
-            "open": open_vals,
-            "high": highs,
-            "low": lows,
-            "close": close,
-            "volume": volumes,
-        })
+        return pd.DataFrame(
+            {
+                "timestamp": timestamps,
+                "open": open_vals,
+                "high": highs,
+                "low": lows,
+                "close": close,
+                "volume": volumes,
+            }
+        )
 
     def make_synthetic_1d(self, data_1h, n_daily_bars=60):
         """Create synthetic 1D data from 1H data."""
@@ -253,17 +284,23 @@ class TestBacktestIntegration:
         close_vals = 50000 * np.cumprod(1 + rng.normal(0.001, 0.02, len(df_d)))
         open_vals = np.roll(close_vals, 1)
         open_vals[0] = close_vals[0] * 0.995
-        highs = np.maximum(open_vals, close_vals) * (1 + rng.uniform(0.005, 0.03, len(df_d)))
-        lows = np.minimum(open_vals, close_vals) * (1 - rng.uniform(0.005, 0.03, len(df_d)))
+        highs = np.maximum(open_vals, close_vals) * (
+            1 + rng.uniform(0.005, 0.03, len(df_d))
+        )
+        lows = np.minimum(open_vals, close_vals) * (
+            1 - rng.uniform(0.005, 0.03, len(df_d))
+        )
 
-        return pd.DataFrame({
-            "timestamp": df_d["timestamp"].values,
-            "open": open_vals,
-            "high": highs,
-            "low": lows,
-            "close": close_vals,
-            "volume": rng.uniform(500, 2000, len(df_d)),
-        })
+        return pd.DataFrame(
+            {
+                "timestamp": df_d["timestamp"].values,
+                "open": open_vals,
+                "high": highs,
+                "low": lows,
+                "close": close_vals,
+                "volume": rng.uniform(500, 2000, len(df_d)),
+            }
+        )
 
     def test_walk_forward_runs(self):
         """Smoke test: walk-forward backtest doesn't crash."""
@@ -278,11 +315,20 @@ class TestBacktestIntegration:
             "exchange": {"fees": {"taker": 0.001, "maker": 0.0005, "slippage": 0.0005}},
             "risk": {"initial_capital": 10000, "max_position_pct": 0.95},
             "backtest": {"walk_forward_folds": 8, "min_train_fraction": 0.25},
-            "strategies": {"mtf_macd_elder": {
-                "macd": {"fast": 12, "slow": 26, "signal": 9},
-                "exit": {"trailing_stop_pct": 0.03, "atr_stop_mult": 2.0, "min_hold_bars": 1},
-                "elder_filter": {"require_volume_confirm": False, "allow_shorts": True},
-            }},
+            "strategies": {
+                "mtf_macd_elder": {
+                    "macd": {"fast": 12, "slow": 26, "signal": 9},
+                    "exit": {
+                        "trailing_stop_pct": 0.03,
+                        "atr_stop_mult": 2.0,
+                        "min_hold_bars": 1,
+                    },
+                    "elder_filter": {
+                        "require_volume_confirm": False,
+                        "allow_shorts": True,
+                    },
+                }
+            },
             "features": {"max_window_bars": 300, "min_bars_required": 50},
         }
 
@@ -308,11 +354,20 @@ class TestBacktestIntegration:
             "exchange": {"fees": {"taker": 0.001, "maker": 0.0005, "slippage": 0.0005}},
             "risk": {"initial_capital": 10000, "max_position_pct": 0.95},
             "backtest": {"walk_forward_folds": 5, "min_train_fraction": 0.25},
-            "strategies": {"mtf_macd_elder": {
-                "macd": {"fast": 12, "slow": 26, "signal": 9},
-                "exit": {"trailing_stop_pct": 0.05, "atr_stop_mult": 2.0, "min_hold_bars": 1},
-                "elder_filter": {"require_volume_confirm": False, "allow_shorts": False},
-            }},
+            "strategies": {
+                "mtf_macd_elder": {
+                    "macd": {"fast": 12, "slow": 26, "signal": 9},
+                    "exit": {
+                        "trailing_stop_pct": 0.05,
+                        "atr_stop_mult": 2.0,
+                        "min_hold_bars": 1,
+                    },
+                    "elder_filter": {
+                        "require_volume_confirm": False,
+                        "allow_shorts": False,
+                    },
+                }
+            },
             "features": {"max_window_bars": 300, "min_bars_required": 50},
         }
 

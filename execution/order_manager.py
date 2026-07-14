@@ -54,7 +54,9 @@ class OrderManager:
         Returns:
             Dict containing status, filled amount, and average execution price.
         """
-        logger.info(f"Initiating Maker-only {side.upper()} order for {amount:.6f} {symbol}")
+        logger.info(
+            f"Initiating Maker-only {side.upper()} order for {amount:.6f} {symbol}"
+        )
 
         # Validate minimum order size against exchange limits
         limits = self.exchange.get_market_limits(symbol)
@@ -65,8 +67,13 @@ class OrderManager:
                 f"Order amount {amount:.6f} below exchange minimum {min_amount:.6f} for {symbol}. "
                 f"Order rejected."
             )
-            return {"status": "failed", "filled": 0.0, "average": 0.0, "order_id": None,
-                    "reason": f"amount below minimum ({amount:.6f} < {min_amount:.6f})"}
+            return {
+                "status": "failed",
+                "filled": 0.0,
+                "average": 0.0,
+                "order_id": None,
+                "reason": f"amount below minimum ({amount:.6f} < {min_amount:.6f})",
+            }
         if min_cost > 0:
             ticker = self.exchange.fetch_ticker(symbol)
             est_cost = amount * ticker.get("last", 0)
@@ -75,8 +82,13 @@ class OrderManager:
                     f"Order cost ${est_cost:.2f} below exchange minimum ${min_cost:.2f} for {symbol}. "
                     f"Order rejected."
                 )
-                return {"status": "failed", "filled": 0.0, "average": 0.0, "order_id": None,
-                        "reason": f"cost below minimum (${est_cost:.2f} < ${min_cost:.2f})"}
+                return {
+                    "status": "failed",
+                    "filled": 0.0,
+                    "average": 0.0,
+                    "order_id": None,
+                    "reason": f"cost below minimum (${est_cost:.2f} < ${min_cost:.2f})",
+                }
 
         remaining_amount = amount
         total_filled = 0.0
@@ -111,9 +123,13 @@ class OrderManager:
             # 2. Place limit order
             try:
                 if side == "buy":
-                    order_res = self.exchange.create_limit_buy_order(symbol, remaining_amount, price)
+                    order_res = self.exchange.create_limit_buy_order(
+                        symbol, remaining_amount, price
+                    )
                 else:
-                    order_res = self.exchange.create_limit_sell_order(symbol, remaining_amount, price)
+                    order_res = self.exchange.create_limit_sell_order(
+                        symbol, remaining_amount, price
+                    )
                 order_id = order_res.get("id")
                 last_order_id = order_id
             except Exception as e:
@@ -137,7 +153,9 @@ class OrderManager:
                 filled_this_attempt = filled
 
                 if status == "closed":
-                    logger.info(f"Order {order_id} fully filled @ ${order_status.get('average', price):.2f}")
+                    logger.info(
+                        f"Order {order_id} fully filled @ ${order_status.get('average', price):.2f}"
+                    )
                     break
                 elif status == "canceled":
                     logger.warning(f"Order {order_id} was externally canceled")
@@ -154,12 +172,14 @@ class OrderManager:
                     filled_this_attempt = float(order_status.get("filled", 0.0))
                 except Exception as e:
                     logger.error(f"Error canceling order {order_id}: {e}")
-            
+
             # 4. Update stats for this attempt
             # Get average price for filled amount
             try:
                 final_order = self.exchange.fetch_order(order_id, symbol)
-                avg_price = float(final_order.get("average") or final_order.get("price") or price)
+                avg_price = float(
+                    final_order.get("average") or final_order.get("price") or price
+                )
             except Exception:
                 avg_price = price
 
@@ -167,7 +187,9 @@ class OrderManager:
                 total_filled += filled_this_attempt
                 pnl_sum += filled_this_attempt * avg_price
                 remaining_amount -= filled_this_attempt
-                logger.info(f"Filled {filled_this_attempt:.6f} {symbol} in this attempt.")
+                logger.info(
+                    f"Filled {filled_this_attempt:.6f} {symbol} in this attempt."
+                )
 
             if remaining_amount <= 1e-8:
                 remaining_amount = 0.0
@@ -183,16 +205,22 @@ class OrderManager:
             )
             try:
                 if side == "buy":
-                    m_res = self.exchange.create_market_buy_order(symbol, remaining_amount)
+                    m_res = self.exchange.create_market_buy_order(
+                        symbol, remaining_amount
+                    )
                 else:
-                    m_res = self.exchange.create_market_sell_order(symbol, remaining_amount)
-                
+                    m_res = self.exchange.create_market_sell_order(
+                        symbol, remaining_amount
+                    )
+
                 # Fetch ticker to estimate execution price or parse from response
                 time.sleep(1.0)
                 market_order_id = m_res.get("id")
                 m_order = self.exchange.fetch_order(market_order_id, symbol)
                 m_filled = float(m_order.get("filled", remaining_amount))
-                m_avg_price = float(m_order.get("average") or m_order.get("price") or 0.0)
+                m_avg_price = float(
+                    m_order.get("average") or m_order.get("price") or 0.0
+                )
                 if m_avg_price == 0.0:
                     # Fallback to ticker close
                     ticker = self.exchange.fetch_ticker(symbol)
@@ -202,19 +230,25 @@ class OrderManager:
                 pnl_sum += m_filled * m_avg_price
                 remaining_amount -= m_filled
                 last_order_id = market_order_id
-                logger.info(f"Market fallback executed: filled {m_filled:.6f} @ ${m_avg_price:.2f}")
+                logger.info(
+                    f"Market fallback executed: filled {m_filled:.6f} @ ${m_avg_price:.2f}"
+                )
             except Exception as e:
                 logger.critical(f"Critical: Market fallback failed: {e}")
 
         # Compute final average price
         avg_exec_price = pnl_sum / total_filled if total_filled > 0 else 0.0
-        
-        status = "filled" if remaining_amount == 0 else ("partially_filled" if total_filled > 0 else "failed")
+
+        status = (
+            "filled"
+            if remaining_amount == 0
+            else ("partially_filled" if total_filled > 0 else "failed")
+        )
         logger.info(
             f"Maker-only order execution complete. Status: {status} | "
             f"Filled: {total_filled:.6f}/{amount:.6f} | Avg Price: ${avg_exec_price:.2f}"
         )
-        
+
         return {
             "status": status,
             "filled": total_filled,

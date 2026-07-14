@@ -20,8 +20,10 @@ except ImportError:
 
 
 __all__ = [
-    "BaseStrategy", "Signal",
-    "MTF_MACD_Elder", "MeanReversion",
+    "BaseStrategy",
+    "Signal",
+    "MTF_MACD_Elder",
+    "MeanReversion",
     "XGBoostCostAware",
     "MetaLabeler",
 ]

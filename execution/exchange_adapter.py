@@ -33,20 +33,24 @@ class ExchangeAdapter:
             passphrase = config.get("BITGET_PASSPHRASE", "")
 
             ex_type = ex_cfg.get("type", "spot")
-            self.exchange = ccxt.bitget({
-                "apiKey": api_key,
-                "secret": secret,
-                "password": passphrase,
-                "enableRateLimit": True,
-                "options": {"defaultType": ex_type},
-            })
+            self.exchange = ccxt.bitget(
+                {
+                    "apiKey": api_key,
+                    "secret": secret,
+                    "password": passphrase,
+                    "enableRateLimit": True,
+                    "options": {"defaultType": ex_type},
+                }
+            )
             self._shared = False
 
         # Load markets to validate symbol (only if we own the instance)
         if not self._shared:
             try:
                 self.exchange.load_markets()
-                logger.info(f"Bitget exchange adapter initialized (authenticated: {bool(api_key)})")
+                logger.info(
+                    f"Bitget exchange adapter initialized (authenticated: {bool(api_key)})"
+                )
             except ccxt.AuthenticationError:
                 logger.error(
                     "Bitget auth failed — check BITGET_API_KEY, BITGET_SECRET_KEY, and BITGET_PASSPHRASE"
@@ -58,8 +62,11 @@ class ExchangeAdapter:
             logger.info("Bitget exchange adapter using shared ccxt instance")
 
     def fetch_ohlcv(
-        self, symbol: Optional[str] = None, timeframe: str = "1h",
-        since: Optional[int] = None, limit: int = 500,
+        self,
+        symbol: Optional[str] = None,
+        timeframe: str = "1h",
+        since: Optional[int] = None,
+        limit: int = 500,
     ):
         """Fetch historical OHLCV candles from Bitget.
 
@@ -87,28 +94,38 @@ class ExchangeAdapter:
         return self.exchange.fetch_ticker(symbol)
 
     def create_limit_buy_order(
-        self, symbol: Optional[str] = None, amount: float = 0, price: float = 0,
+        self,
+        symbol: Optional[str] = None,
+        amount: float = 0,
+        price: float = 0,
     ):
         """Place a limit buy order."""
         symbol = symbol or self.symbol
         return self.exchange.create_limit_buy_order(symbol, amount, price)
 
     def create_limit_sell_order(
-        self, symbol: Optional[str] = None, amount: float = 0, price: float = 0,
+        self,
+        symbol: Optional[str] = None,
+        amount: float = 0,
+        price: float = 0,
     ):
         """Place a limit sell order."""
         symbol = symbol or self.symbol
         return self.exchange.create_limit_sell_order(symbol, amount, price)
 
     def create_market_buy_order(
-        self, symbol: Optional[str] = None, amount: float = 0,
+        self,
+        symbol: Optional[str] = None,
+        amount: float = 0,
     ):
         """Place a market buy order."""
         symbol = symbol or self.symbol
         return self.exchange.create_market_buy_order(symbol, amount)
 
     def create_market_sell_order(
-        self, symbol: Optional[str] = None, amount: float = 0,
+        self,
+        symbol: Optional[str] = None,
+        amount: float = 0,
     ):
         """Place a market sell order."""
         symbol = symbol or self.symbol
@@ -164,4 +181,9 @@ class ExchangeAdapter:
                 "price_precision": precision.get("price", None),
             }
         except Exception:
-            return {"min_amount": 0.0, "min_cost": 0.0, "amount_precision": None, "price_precision": None}
+            return {
+                "min_amount": 0.0,
+                "min_cost": 0.0,
+                "amount_precision": None,
+                "price_precision": None,
+            }

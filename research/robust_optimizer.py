@@ -6,6 +6,7 @@ degradation thresholds, minimum trade limits, deflation tests, and
 portfolio-level validation to prevent backtest overfitting (Ślępaczuk 2026).
 Supports multi-processing to run in under 3 minutes.
 """
+
 import sys
 import copy
 import time
@@ -41,25 +42,33 @@ MACD_OPTIONS = [(8, 21, 9), (12, 26, 9), (5, 13, 8), (10, 20, 9)]
 TRAILING_STOPS = [0.02, 0.03, 0.04, 0.05]
 ATR_STOPS = [1.5, 2.0, 2.5, 3.0]
 
+
 def _resample_to_1d(df_1h):
     df = df_1h.copy()
     df["dt"] = pd.to_datetime(df["timestamp"], unit="ms")
     df = df.set_index("dt")
-    daily = df.resample("1D", closed="left", label="left").agg({
-        "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum",
-    })
+    daily = df.resample("1D", closed="left", label="left").agg(
+        {
+            "open": "first",
+            "high": "max",
+            "low": "min",
+            "close": "last",
+            "volume": "sum",
+        }
+    )
     daily["bar_count"] = df.resample("1D").size()
     daily = daily[daily["bar_count"] >= 12].dropna().reset_index()
     daily["timestamp"] = daily["dt"].astype("datetime64[ms]").astype("int64")
     daily.drop(columns=["dt"], inplace=True)
     return daily
 
+
 def get_sliding_windows(df, train_months=24, test_months=3):
     df = df.copy()
     df["dt"] = pd.to_datetime(df["timestamp"], unit="ms")
     min_date = df["dt"].min()
     max_date = df["dt"].max()
-    
+
     folds = []
     current_start = min_date
     while True:
@@ -67,82 +76,96 @@ def get_sliding_windows(df, train_months=24, test_months=3):
         train_end = train_start + pd.DateOffset(months=train_months)
         test_start = train_end
         test_end = test_start + pd.DateOffset(months=test_months)
-        
+
         # Stop if the test window goes beyond the available data
         if test_end > max_date + pd.DateOffset(days=5):
             break
-            
-        folds.append({
-            "train_start": train_start,
-            "train_end": train_end,
-            "test_start": test_start,
-            "test_end": test_end
-        })
+
+        folds.append(
+            {
+                "train_start": train_start,
+                "train_end": train_end,
+                "test_start": test_start,
+                "test_end": test_end,
+            }
+        )
         current_start = current_start + pd.DateOffset(months=test_months)
     return folds
+
 
 def get_symbol_config(global_config: dict, symbol: str) -> dict:
     cfg = copy.deepcopy(global_config)
     cfg["exchange"]["symbols"] = [symbol]
     overrides = global_config.get("symbols", {}).get(symbol, {})
-    
+
     def merge_dicts(dict1, dict2):
         for k, v in dict2.items():
             if isinstance(v, dict) and k in dict1 and isinstance(dict1[k], dict):
                 merge_dicts(dict1[k], v)
             else:
                 dict1[k] = v
+
     merge_dicts(cfg, overrides)
     return cfg
 
+
 def run_backtest_slice(config, data_slice, features_slice, d1_trends_slice):
     engine = BacktestEngine(config)
-    
+
     # Instantiate strategy copies with the candidate config
     strategies = {
         "mtf_macd": MTF_MACD_Elder(config),
-        "mean_reversion": MeanReversion(config)
+        "mean_reversion": MeanReversion(config),
     }
     classifier = RegimeClassifier(config)
     router = EnsembleRouter(strategies, classifier)
-    
+
     # Sync initial D1 trend
     mtf_strat = strategies.get("mtf_macd")
     if mtf_strat and len(d1_trends_slice) > 0:
         mtf_strat.set_d1_trend_direct(d1_trends_slice.iloc[0])
-        
+
     trades = engine._simulate_trading(
         strategy=None,
         data=data_slice,
         features=features_slice,
         d1_trends=d1_trends_slice,
         test_start_idx=0,
-        ensemble_router=router
+        ensemble_router=router,
     )
     return trades
+
 
 def run_deflation_test(config, df_1h, df_1d, final_params, n_iterations=10):
     fast, slow, signal, ts, atr = final_params
 
     # Setup config
     test_cfg = copy.deepcopy(config)
-    test_cfg["strategies"]["mtf_macd_elder"]["macd"] = {"fast": fast, "slow": slow, "signal": signal}
-    test_cfg["strategies"]["mtf_macd_elder"]["exit"] = {"trailing_stop_pct": ts, "atr_stop_mult": atr, "min_hold_bars": 6}
-    
+    test_cfg["strategies"]["mtf_macd_elder"]["macd"] = {
+        "fast": fast,
+        "slow": slow,
+        "signal": signal,
+    }
+    test_cfg["strategies"]["mtf_macd_elder"]["exit"] = {
+        "trailing_stop_pct": ts,
+        "atr_stop_mult": atr,
+        "min_hold_bars": 6,
+    }
+
     engine = BacktestEngine(test_cfg)
-    
+
     # Calculate returns (copy to avoid read-only array ValueError)
     returns = df_1h["close"].pct_change().dropna().values.copy()
-    
+
     shuffled_sharpes = []
-    
+
     for _ in range(n_iterations):
         # Shuffle returns
         np.random.shuffle(returns)
-        
+
         # Reconstruct price series
         reconstructed_close = df_1h["close"].iloc[0] * np.cumprod(1 + returns)
-        
+
         # Create a mock DataFrame
         shuffled_df = df_1h.copy()
         shuffled_df = shuffled_df.iloc[1:].reset_index(drop=True)
@@ -150,52 +173,64 @@ def run_deflation_test(config, df_1h, df_1d, final_params, n_iterations=10):
         shuffled_df["open"] = reconstructed_close
         shuffled_df["high"] = reconstructed_close
         shuffled_df["low"] = reconstructed_close
-        
+
         shuffled_1d = _resample_to_1d(shuffled_df)
-        
+
         try:
-            res = engine.run_ensemble_backtest(shuffled_df, {
-                "mtf_macd": MTF_MACD_Elder,
-                "mean_reversion": MeanReversion
-            }, data_1d=shuffled_1d)
+            res = engine.run_ensemble_backtest(
+                shuffled_df,
+                {"mtf_macd": MTF_MACD_Elder, "mean_reversion": MeanReversion},
+                data_1d=shuffled_1d,
+            )
             shuffled_sharpes.append(res.metrics.get("sharpe_ratio", 0))
         except:
             pass
-            
+
     avg_shuffled_sharpe = np.mean(shuffled_sharpes) if shuffled_sharpes else 0
     return avg_shuffled_sharpe
+
 
 def evaluate_fold_job(args):
     """Job function to optimize a single fold in parallel."""
     idx, fold, train_df, test_df, fold_macd_slices, symbol_cfg = args
-    
+
     best_train_sharpe = -999
     best_train_combo = None
     best_train_trades = 0
-    
+
     # Grid search on training window
     combos = list(itertools.product(MACD_OPTIONS, TRAILING_STOPS, ATR_STOPS))
-    
+
     for macd_set, ts, atr in combos:
         # Extract slices from precomputed dictionary
         train_features, train_d1_trends, _, _ = fold_macd_slices[macd_set]
-        
+
         config_cand = copy.deepcopy(symbol_cfg)
-        config_cand["strategies"]["mtf_macd_elder"]["macd"] = {"fast": macd_set[0], "slow": macd_set[1], "signal": macd_set[2]}
-        config_cand["strategies"]["mtf_macd_elder"]["exit"] = {"trailing_stop_pct": ts, "atr_stop_mult": atr, "min_hold_bars": 6}
-        
-        trades = run_backtest_slice(config_cand, train_df, train_features, train_d1_trends)
-        
+        config_cand["strategies"]["mtf_macd_elder"]["macd"] = {
+            "fast": macd_set[0],
+            "slow": macd_set[1],
+            "signal": macd_set[2],
+        }
+        config_cand["strategies"]["mtf_macd_elder"]["exit"] = {
+            "trailing_stop_pct": ts,
+            "atr_stop_mult": atr,
+            "min_hold_bars": 6,
+        }
+
+        trades = run_backtest_slice(
+            config_cand, train_df, train_features, train_d1_trends
+        )
+
         if not trades:
             continue
-            
+
         metrics = calculate_metrics(trades, 10000.0)
         sharpe = metrics.get("sharpe_ratio", 0)
         num_trades = metrics.get("total_trades", 0)
-        
+
         # Faza 3b: Minimum trades filter -- prefer parameters yielding >= 15 trades on train
-        is_valid_size = (num_trades >= 15)
-        
+        is_valid_size = num_trades >= 15
+
         if is_valid_size and sharpe > best_train_sharpe:
             best_train_sharpe = sharpe
             best_train_combo = (macd_set, ts, atr)
@@ -204,53 +239,63 @@ def evaluate_fold_job(args):
             best_train_sharpe = sharpe
             best_train_combo = (macd_set, ts, atr)
             best_train_trades = num_trades
-            
+
     if not best_train_combo:
         # Default fallback
         best_train_combo = (MACD_OPTIONS[0], TRAILING_STOPS[0], ATR_STOPS[0])
         best_train_sharpe = 0.0
-        
+
     # Test on Out-of-Sample (OOS) using the optimal train params
     best_macd, best_ts, best_atr = best_train_combo
     _, _, test_features, test_d1_trends = fold_macd_slices[best_macd]
-    
+
     config_oos = copy.deepcopy(symbol_cfg)
-    config_oos["strategies"]["mtf_macd_elder"]["macd"] = {"fast": best_macd[0], "slow": best_macd[1], "signal": best_macd[2]}
-    config_oos["strategies"]["mtf_macd_elder"]["exit"] = {"trailing_stop_pct": best_ts, "atr_stop_mult": best_atr, "min_hold_bars": 6}
-    
+    config_oos["strategies"]["mtf_macd_elder"]["macd"] = {
+        "fast": best_macd[0],
+        "slow": best_macd[1],
+        "signal": best_macd[2],
+    }
+    config_oos["strategies"]["mtf_macd_elder"]["exit"] = {
+        "trailing_stop_pct": best_ts,
+        "atr_stop_mult": best_atr,
+        "min_hold_bars": 6,
+    }
+
     oos_trades = run_backtest_slice(config_oos, test_df, test_features, test_d1_trends)
     oos_metrics = calculate_metrics(oos_trades, 10000.0)
-    
+
     oos_sharpe = oos_metrics.get("sharpe_ratio", 0)
     oos_pnl = oos_metrics.get("total_pnl", 0)
-    
+
     # Faza 3c: Degradation Check
     degradation = 0.0
     if best_train_sharpe > 0:
         degradation = (best_train_sharpe - oos_sharpe) / best_train_sharpe
-        
+
     overfit_flag = "OVERFIT" if degradation > 0.50 else "OK"
     low_trades_flag = "LOW TRADES" if oos_metrics.get("total_trades", 0) < 15 else ""
-    
+
     # Serialize trades with full fields needed for portfolio-level capital allocation.
     # fold_id is essential for inter-fold equity chaining: all trades within the same
     # fold share the same start-of-fold equity scale factor.
     serializable_trades = []
     for t in oos_trades:
-        serializable_trades.append({
-            "entry_time": t.get("entry_time"),
-            "exit_time": t.get("exit_time"),
-            "entry_price": t.get("entry_price"),
-            "exit_price": t.get("exit_price"),
-            "side": t.get("side"),
-            "pnl": t.get("pnl"),
-            "pnl_pct": t.get("pnl_pct"),
-            "win": t.get("win"),
-            "exit_reason": t.get("exit_reason"),
-            "bars_held": t.get("bars_held"),
-            "fold_id": idx + 1,  # 1-based fold index for cross-fold equity chaining
-        })
-        
+        serializable_trades.append(
+            {
+                "entry_time": t.get("entry_time"),
+                "exit_time": t.get("exit_time"),
+                "entry_price": t.get("entry_price"),
+                "exit_price": t.get("exit_price"),
+                "side": t.get("side"),
+                "pnl": t.get("pnl"),
+                "pnl_pct": t.get("pnl_pct"),
+                "win": t.get("win"),
+                "exit_reason": t.get("exit_reason"),
+                "bars_held": t.get("bars_held"),
+                "fold_id": idx + 1,  # 1-based fold index for cross-fold equity chaining
+            }
+        )
+
     return {
         "fold": idx + 1,
         "best_params": f"MACD{best_macd}_T{best_ts:.0%}_A{best_atr:.1f}",
@@ -265,14 +310,15 @@ def evaluate_fold_job(args):
         "best_macd_signal": best_macd[2],  # Full triplet: (fast, slow, signal)
         "best_ts": best_ts,
         "best_atr": best_atr,
-        "trades": serializable_trades
+        "trades": serializable_trades,
     }
 
+
 def run_true_multi_asset_backtest(
-    symbol_params: dict,     # symbol -> (fast, slow, signal, trailing_pct, atr_mult)
-    symbol_configs: dict,    # symbol -> merged config dict
-    data_1h: dict,           # symbol -> DataFrame
-    data_1d: dict,           # symbol -> DataFrame
+    symbol_params: dict,  # symbol -> (fast, slow, signal, trailing_pct, atr_mult)
+    symbol_configs: dict,  # symbol -> merged config dict
+    data_1h: dict,  # symbol -> DataFrame
+    data_1d: dict,  # symbol -> DataFrame
     initial_capital: float = 10000.0,
     max_position_pct: float = 0.20,
     max_concurrent: int = 3,
@@ -300,10 +346,13 @@ def run_true_multi_asset_backtest(
         fast, slow, signal, trail, atr_mult = symbol_params[symbol]
 
         cfg["strategies"]["mtf_macd_elder"]["macd"] = {
-            "fast": fast, "slow": slow, "signal": signal
+            "fast": fast,
+            "slow": slow,
+            "signal": signal,
         }
         cfg["strategies"]["mtf_macd_elder"]["exit"] = {
-            "trailing_stop_pct": trail, "atr_stop_mult": atr_mult,
+            "trailing_stop_pct": trail,
+            "atr_stop_mult": atr_mult,
             "min_hold_bars": 6,
         }
 
@@ -311,10 +360,16 @@ def run_true_multi_asset_backtest(
         engines[symbol] = engine
 
         # Compute features for full dataset
-        df_feat = engine.feature_engine.bulk_compute(data_1h[symbol], df_1d=data_1d[symbol])
+        df_feat = engine.feature_engine.bulk_compute(
+            data_1h[symbol], df_1d=data_1d[symbol]
+        )
         # Add D1 trend
-        d1_trends = engine._compute_d1_trend_series(data_1d[symbol], len(data_1h[symbol]))
-        df_feat["d1_trend"] = d1_trends.values if len(d1_trends) == len(df_feat) else "FLAT"
+        d1_trends = engine._compute_d1_trend_series(
+            data_1d[symbol], len(data_1h[symbol])
+        )
+        df_feat["d1_trend"] = (
+            d1_trends.values if len(d1_trends) == len(df_feat) else "FLAT"
+        )
         feature_cols[symbol] = df_feat
 
         # Strategies and router
@@ -342,8 +397,10 @@ def run_true_multi_asset_backtest(
             if ts not in timeline_data:
                 timeline_data[ts] = {}
             timeline_data[ts][symbol] = {
-                "open": row["open"], "high": row["high"],
-                "low": row["low"], "close": row["close"],
+                "open": row["open"],
+                "high": row["high"],
+                "low": row["low"],
+                "close": row["close"],
                 "volume": row["volume"],
             }
 
@@ -391,9 +448,9 @@ def run_true_multi_asset_backtest(
     taker_fee = fees.get("taker", 0.0006)
     # Dynamic slippage: base + ATR-driven component
     # Stop-loss events in high vol have much higher slippage than calm entries
-    slippage_base = fees.get("slippage", 0.0002)       # 0.02% base (maker)
-    slippage_atr_mult = 0.05                            # ATR-to-slippage scaling
-    taker_slippage_mult = 1.5                           # Taker exits: 1.5× worse
+    slippage_base = fees.get("slippage", 0.0002)  # 0.02% base (maker)
+    slippage_atr_mult = 0.05  # ATR-to-slippage scaling
+    taker_slippage_mult = 1.5  # Taker exits: 1.5× worse
 
     # ── Train/Test split ────────────────────────────────
     n_warmup = int(len(timeline) * warmup_pct)
@@ -401,9 +458,13 @@ def run_true_multi_asset_backtest(
     test_start_ts = timeline[n_warmup] if n_warmup < len(timeline) else timeline[-1]
     n_test_bars = n_test_end - n_warmup
     test_start_date = pd.to_datetime(test_start_ts, unit="ms").date()
-    test_end_date = pd.to_datetime(timeline[min(n_test_end, len(timeline)-1)], unit="ms").date()
-    print(f"    Warmup: {n_warmup:,} bars (until {test_start_date}) | "
-          f"Test: {n_test_bars:,} bars ({test_start_date} -> {test_end_date})")
+    test_end_date = pd.to_datetime(
+        timeline[min(n_test_end, len(timeline) - 1)], unit="ms"
+    ).date()
+    print(
+        f"    Warmup: {n_warmup:,} bars (until {test_start_date}) | "
+        f"Test: {n_test_bars:,} bars ({test_start_date} -> {test_end_date})"
+    )
 
     # Track warmup PnL separately (informational only)
     warmup_pnl_total = 0.0
@@ -496,7 +557,9 @@ def run_true_multi_asset_backtest(
             exit_atr = feats.get(pos["symbol"], {}).get("atr_14", exit_price * 0.02)
             atr_pct_exit = exit_atr / exit_price if exit_price > 0 else 0.02
             # Taker exits during high vol have much higher slippage
-            exit_slip = slippage_base + atr_pct_exit * slippage_atr_mult * taker_slippage_mult
+            exit_slip = (
+                slippage_base + atr_pct_exit * slippage_atr_mult * taker_slippage_mult
+            )
             entry_slip = pos.get("entry_slippage", slippage_base)
 
             # Apply fees + dynamic slippage (entry + exit)
@@ -507,20 +570,22 @@ def run_true_multi_asset_backtest(
             equity_curve.append(equity)
             equity_timestamps.append(ts)
 
-            trades.append({
-                "entry_time": pos["entry_ts"],
-                "exit_time": ts,
-                "symbol": pos["symbol"],
-                "side": side,
-                "entry_price": entry_price,
-                "exit_price": exit_price,
-                "cost": cost,
-                "pnl": pnl,
-                "pnl_pct": net_ret * 100,
-                "win": pnl > 0,
-                "exit_reason": exit_reason,
-                "bars_held": pos.get("bars_held", 0),
-            })
+            trades.append(
+                {
+                    "entry_time": pos["entry_ts"],
+                    "exit_time": ts,
+                    "symbol": pos["symbol"],
+                    "side": side,
+                    "entry_price": entry_price,
+                    "exit_price": exit_price,
+                    "cost": cost,
+                    "pnl": pnl,
+                    "pnl_pct": net_ret * 100,
+                    "win": pnl > 0,
+                    "exit_reason": exit_reason,
+                    "bars_held": pos.get("bars_held", 0),
+                }
+            )
 
         # ── Update D1 trends (always, even during warmup) ──
         for sym in candles:
@@ -580,7 +645,9 @@ def run_true_multi_asset_backtest(
             # Dynamic entry slippage (maker order — lower impact)
             sym_atr = feats.get(sym, {}).get("atr_14", open_price * 0.02)
             atr_pct_entry = sym_atr / open_price if open_price > 0 else 0.02
-            entry_slip = slippage_base + max(0, atr_pct_entry - 0.005) * slippage_atr_mult
+            entry_slip = (
+                slippage_base + max(0, atr_pct_entry - 0.005) * slippage_atr_mult
+            )
             if side == "long":
                 entry_price = open_price * (1.0 + entry_slip)
             else:
@@ -633,8 +700,10 @@ def run_true_multi_asset_backtest(
 
     # ── Metrics ─────────────────────────────────────────
     metrics = calculate_metrics(
-        trades, initial_capital=initial_capital,
-        start_time=timeline[0], end_time=timeline[-1]
+        trades,
+        initial_capital=initial_capital,
+        start_time=timeline[0],
+        end_time=timeline[-1],
     )
 
     return {
@@ -689,8 +758,10 @@ def run_random_entry_baseline(
             if ts not in candles_lookup:
                 candles_lookup[ts] = {}
             candles_lookup[ts][symbol] = {
-                "open": row["open"], "high": row["high"],
-                "low": row["low"], "close": row["close"],
+                "open": row["open"],
+                "high": row["high"],
+                "low": row["low"],
+                "close": row["close"],
                 "volume": row["volume"],
             }
 
@@ -769,20 +840,26 @@ def run_random_entry_baseline(
                 gross_ret = (exit_price - entry_price) / entry_price
                 net_ret = gross_ret - (taker_fee * 2) - (slippage * 2)
                 pnl_pct = net_ret * 100
-                outcomes.append({
-                    "entry_ts": ts,
-                    "pnl_pct": pnl_pct,
-                    "exit_ts": timeline[future_idx] if exit_price else ts,
-                    "bars_held": future_idx - bar_idx if exit_price else 0,
-                })
+                outcomes.append(
+                    {
+                        "entry_ts": ts,
+                        "pnl_pct": pnl_pct,
+                        "exit_ts": timeline[future_idx] if exit_price else ts,
+                        "bars_held": future_idx - bar_idx if exit_price else 0,
+                    }
+                )
 
         trade_outcomes[symbol] = outcomes
-        print(f"    {symbol.split('/')[0]}: {len(outcomes)} possible entries pre-computed")
+        print(
+            f"    {symbol.split('/')[0]}: {len(outcomes)} possible entries pre-computed"
+        )
 
     # ── Match actual signal counts per symbol ─────────────
     if signal_counts is None:
         signal_counts = {}
-    print(f"    Signal counts: { {s.split('/')[0]: c for s, c in signal_counts.items()} }")
+    print(
+        f"    Signal counts: { {s.split('/')[0]: c for s, c in signal_counts.items()} }"
+    )
 
     # ── Run N random strategies ──────────────────────────
     sharpe_values = []
@@ -824,9 +901,10 @@ def run_random_entry_baseline(
                 continue
 
             desired = equity * max_position_pct
-            cost = min(desired, equity - sum(
-                equity * max_position_pct for _ in active_positions
-            ))
+            cost = min(
+                desired,
+                equity - sum(equity * max_position_pct for _ in active_positions),
+            )
             cost = max(cost, 100.0)  # min trade size
 
             if cost <= 0:
@@ -856,11 +934,18 @@ def run_random_entry_baseline(
         if len(daily_eq) > 5:
             daily_ret = daily_eq.pct_change().dropna()
             if daily_ret.std() > 0 and len(daily_ret) > 3:
-                sharpe = (daily_ret.mean() / daily_ret.std()) * np.sqrt(len(executed_trades) / (len(timeline) - n_warmup) * 365.25 * 24)
+                sharpe = (daily_ret.mean() / daily_ret.std()) * np.sqrt(
+                    len(executed_trades) / (len(timeline) - n_warmup) * 365.25 * 24
+                )
                 # Simpler: trade-based Sharpe
                 if len(executed_trades) > 5:
                     trade_rets = np.array([t["pnl"] for t in executed_trades]) / 10000.0
-                    sharpe = (trade_rets.mean() / trade_rets.std()) * np.sqrt(len(executed_trades) / 2.6) if trade_rets.std() > 0 else 0.0
+                    sharpe = (
+                        (trade_rets.mean() / trade_rets.std())
+                        * np.sqrt(len(executed_trades) / 2.6)
+                        if trade_rets.std() > 0
+                        else 0.0
+                    )
                 else:
                     sharpe = 0.0
             else:
@@ -908,6 +993,7 @@ def main(skip_wf: bool = False, quick: bool = False, random_runs: int = 1000):
     wf_params_cache = {}
     if WF_CACHE_PATH.exists() and skip_wf:
         import json
+
         with open(WF_CACHE_PATH) as f:
             wf_params_cache = json.load(f)
         print("Loaded WF parameters from cache. Skipping walk-forward optimization.\n")
@@ -916,25 +1002,25 @@ def main(skip_wf: bool = False, quick: bool = False, random_runs: int = 1000):
         "ETH/USDT:USDT": "eth_1h_2020_2026.parquet",
         "XRP/USDT:USDT": "xrp_1h_2020_2026.parquet",
         "SOL/USDT:USDT": "sol_1h_2020_2026.parquet",
-        "LTC/USDT:USDT": "ltc_1h_2020_2026.parquet"
+        "LTC/USDT:USDT": "ltc_1h_2020_2026.parquet",
     }
-    
+
     all_oos_trades = []
     symbol_results = {}
-    
+
     print("=========================================================================")
     print("                ROBUST PARAMETER OPTIMIZATION START                      ")
     print("=========================================================================\n")
-    
+
     # Determine CPU core count for multiprocessing pool
     num_cores = max(1, multiprocessing.cpu_count() - 1)
     print(f"Using Multiprocessing with {num_cores} workers.\n")
-    
+
     for symbol in symbols:
         filename = symbol_file_map.get(symbol)
         if not filename or not (PROJECT_ROOT / "data" / "cache" / filename).exists():
             continue
-            
+
         # ── Check WF cache ────────────────────────────────
         sym_short = symbol.split("/")[0]
         if skip_wf and sym_short in wf_params_cache:
@@ -947,9 +1033,11 @@ def main(skip_wf: bool = False, quick: bool = False, random_runs: int = 1000):
                 "deflation_sharpe": cached.get("deflation_sharpe", 0),
                 "trades": [],
             }
-            print(f"--- {symbol}: SKIPPED (cached params) "
-                  f"MACD({final_params_tuple[0]},{final_params_tuple[1]},{final_params_tuple[2]}) "
-                  f"T={final_params_tuple[3]:.0%} ATR={final_params_tuple[4]:.1f}x ---\n")
+            print(
+                f"--- {symbol}: SKIPPED (cached params) "
+                f"MACD({final_params_tuple[0]},{final_params_tuple[1]},{final_params_tuple[2]}) "
+                f"T={final_params_tuple[3]:.0%} ATR={final_params_tuple[4]:.1f}x ---\n"
+            )
             continue
 
         print(f"--- Optimizing Symbol: {symbol} ---")
@@ -958,110 +1046,160 @@ def main(skip_wf: bool = False, quick: bool = False, random_runs: int = 1000):
         df_1h["dt"] = pd.to_datetime(df_1h["timestamp"], unit="ms")
         df_1d = _resample_to_1d(df_1h)
         df_1d["dt"] = pd.to_datetime(df_1d["timestamp"], unit="ms")
-        
+
         symbol_cfg = get_symbol_config(global_config, symbol)
         symbol_cfg["risk"]["initial_capital"] = 10000.0
         symbol_cfg["risk"]["max_position_pct"] = 0.20
         symbol_cfg["regime"] = {
-            "trending": {"adx_min": 25, "di_ratio_strong": 1.3, "di_ratio_reverse": 0.77},
+            "trending": {
+                "adx_min": 25,
+                "di_ratio_strong": 1.3,
+                "di_ratio_reverse": 0.77,
+            },
             "ranging": {"adx_max": 20, "bb_width_max": 0.04, "vol_max": 0.50},
             "volatile": {"atr_mult": 2.0, "vol_absolute": 1.0, "bb_width_min": 0.08},
-            "hysteresis_bars": 2, "lookback_bars": 100,
+            "hysteresis_bars": 2,
+            "lookback_bars": 100,
         }
-        
+
         # 1. Precompute features and daily trends for all MACD options to save time
         print("  Precomputing indicators for candidate MACD settings...")
         macd_cache = {}
         for macd_set in MACD_OPTIONS:
             fast, slow, signal = macd_set
             config_copy = copy.deepcopy(symbol_cfg)
-            config_copy["strategies"]["mtf_macd_elder"]["macd"] = {"fast": fast, "slow": slow, "signal": signal}
-            
+            config_copy["strategies"]["mtf_macd_elder"]["macd"] = {
+                "fast": fast,
+                "slow": slow,
+                "signal": signal,
+            }
+
             engine = BacktestEngine(config_copy)
             features_df = engine.feature_engine.bulk_compute(df_1h, df_1d=df_1d)
             features_df["dt"] = df_1h["dt"]
-            
+
             d1_trends = engine._compute_d1_trend_series(df_1d, len(df_1h))
-            
+
             macd_cache[macd_set] = (features_df, d1_trends)
-            
+
         # 2. Generate Sliding Window Folds
         folds = get_sliding_windows(df_1h, train_months=24, test_months=3)
         print(f"  Generated {len(folds)} sliding folds (24m train, 3m test)")
-        
+
         # 3. Build jobs list with pre-sliced data to minimize IPC overhead
         jobs = []
         for idx, fold in enumerate(folds):
-            train_df = df_1h[(df_1h["dt"] >= fold["train_start"]) & (df_1h["dt"] < fold["train_end"])].reset_index(drop=True)
-            test_df = df_1h[(df_1h["dt"] >= fold["test_start"]) & (df_1h["dt"] < fold["test_end"])].reset_index(drop=True)
-            
+            train_df = df_1h[
+                (df_1h["dt"] >= fold["train_start"]) & (df_1h["dt"] < fold["train_end"])
+            ].reset_index(drop=True)
+            test_df = df_1h[
+                (df_1h["dt"] >= fold["test_start"]) & (df_1h["dt"] < fold["test_end"])
+            ].reset_index(drop=True)
+
             if len(train_df) < 1000 or len(test_df) < 100:
                 continue
-                
+
             # Slice MACD indicators for this fold
             fold_macd_slices = {}
             for macd_set in MACD_OPTIONS:
                 features_all, d1_trends_all = macd_cache[macd_set]
-                
-                train_features = features_all[(features_all["dt"] >= fold["train_start"]) & (features_all["dt"] < fold["train_end"])].reset_index(drop=True)
-                train_d1_trends = d1_trends_all.iloc[train_df.index].reset_index(drop=True)
-                
-                test_features = features_all[(features_all["dt"] >= fold["test_start"]) & (features_all["dt"] < fold["test_end"])].reset_index(drop=True)
-                test_d1_trends = d1_trends_all.iloc[df_1h[df_1h["dt"] >= fold["test_start"]].index[:len(test_df)]].reset_index(drop=True)
-                
-                fold_macd_slices[macd_set] = (train_features, train_d1_trends, test_features, test_d1_trends)
-                
+
+                train_features = features_all[
+                    (features_all["dt"] >= fold["train_start"])
+                    & (features_all["dt"] < fold["train_end"])
+                ].reset_index(drop=True)
+                train_d1_trends = d1_trends_all.iloc[train_df.index].reset_index(
+                    drop=True
+                )
+
+                test_features = features_all[
+                    (features_all["dt"] >= fold["test_start"])
+                    & (features_all["dt"] < fold["test_end"])
+                ].reset_index(drop=True)
+                test_d1_trends = d1_trends_all.iloc[
+                    df_1h[df_1h["dt"] >= fold["test_start"]].index[: len(test_df)]
+                ].reset_index(drop=True)
+
+                fold_macd_slices[macd_set] = (
+                    train_features,
+                    train_d1_trends,
+                    test_features,
+                    test_d1_trends,
+                )
+
             jobs.append((idx, fold, train_df, test_df, fold_macd_slices, symbol_cfg))
-            
+
         # Execute jobs in parallel
         print(f"  Running grid search on {len(jobs)} folds...")
         start_time = time.time()
         with multiprocessing.Pool(processes=num_cores) as pool:
             results = pool.map(evaluate_fold_job, jobs)
-            
+
         results = [r for r in results if r is not None]
         results.sort(key=lambda x: x["fold"])
-        
+
         fold_results = []
         symbol_oos_trades = []
-        
+
         for r in results:
-            fold_results.append({
-                "fold": r["fold"],
-                "best_params": r["best_params"],
-                "train_sharpe": r["train_sharpe"],
-                "oos_sharpe": r["oos_sharpe"],
-                "oos_pnl": r["oos_pnl"],
-                "oos_trades": r["oos_trades_count"],
-                "degradation": r["degradation"],
-                "status": r["status"],
-                "best_macd_fast": r["best_macd_fast"],
-                "best_macd_slow": r["best_macd_slow"],
-                "best_macd_signal": r.get("best_macd_signal", 9),  # Signal from the full triplet
-                "best_ts": r["best_ts"],
-                "best_atr": r["best_atr"]
-            })
-            
+            fold_results.append(
+                {
+                    "fold": r["fold"],
+                    "best_params": r["best_params"],
+                    "train_sharpe": r["train_sharpe"],
+                    "oos_sharpe": r["oos_sharpe"],
+                    "oos_pnl": r["oos_pnl"],
+                    "oos_trades": r["oos_trades_count"],
+                    "degradation": r["degradation"],
+                    "status": r["status"],
+                    "best_macd_fast": r["best_macd_fast"],
+                    "best_macd_slow": r["best_macd_slow"],
+                    "best_macd_signal": r.get(
+                        "best_macd_signal", 9
+                    ),  # Signal from the full triplet
+                    "best_ts": r["best_ts"],
+                    "best_atr": r["best_atr"],
+                }
+            )
+
             for t in r["trades"]:
                 t["symbol"] = symbol.split("/")[0]
                 symbol_oos_trades.append(t)
-                
+
         df_folds = pd.DataFrame(fold_results)
-        
+
         # Calculate Stability (Coefficient of Variation)
-        fast_cv = df_folds["best_macd_fast"].std() / df_folds["best_macd_fast"].mean() if df_folds["best_macd_fast"].mean() > 0 else 0
-        slow_cv = df_folds["best_macd_slow"].std() / df_folds["best_macd_slow"].mean() if df_folds["best_macd_slow"].mean() > 0 else 0
-        ts_cv = df_folds["best_ts"].std() / df_folds["best_ts"].mean() if df_folds["best_ts"].mean() > 0 else 0
-        atr_cv = df_folds["best_atr"].std() / df_folds["best_atr"].mean() if df_folds["best_atr"].mean() > 0 else 0
+        fast_cv = (
+            df_folds["best_macd_fast"].std() / df_folds["best_macd_fast"].mean()
+            if df_folds["best_macd_fast"].mean() > 0
+            else 0
+        )
+        slow_cv = (
+            df_folds["best_macd_slow"].std() / df_folds["best_macd_slow"].mean()
+            if df_folds["best_macd_slow"].mean() > 0
+            else 0
+        )
+        ts_cv = (
+            df_folds["best_ts"].std() / df_folds["best_ts"].mean()
+            if df_folds["best_ts"].mean() > 0
+            else 0
+        )
+        atr_cv = (
+            df_folds["best_atr"].std() / df_folds["best_atr"].mean()
+            if df_folds["best_atr"].mean() > 0
+            else 0
+        )
 
         # ── Modal MACD selection (full triplet, not per-parameter!) ──
         # Each MACD (fast, slow, signal) triplet is a different indicator.
         # We select the most frequent complete triplet across folds.
-        macd_triplets = list(zip(
-            df_folds["best_macd_fast"].astype(int),
-            df_folds["best_macd_slow"].astype(int),
-            df_folds["best_macd_signal"].astype(int)
-        ))
+        macd_triplets = list(
+            zip(
+                df_folds["best_macd_fast"].astype(int),
+                df_folds["best_macd_slow"].astype(int),
+                df_folds["best_macd_signal"].astype(int),
+            )
+        )
         macd_counts = pd.Series(macd_triplets).value_counts()
 
         # Pick the most frequent triplet; tie-break by avg OOS Sharpe
@@ -1074,9 +1212,11 @@ def main(skip_wf: bool = False, quick: bool = False, random_runs: int = 1000):
             best_avg_sharpe = -999.0
             best_trip = top_triplets[0]
             for trip in top_triplets:
-                tup_mask = (df_folds["best_macd_fast"].astype(int) == trip[0]) & \
-                           (df_folds["best_macd_slow"].astype(int) == trip[1]) & \
-                           (df_folds["best_macd_signal"].astype(int) == trip[2])
+                tup_mask = (
+                    (df_folds["best_macd_fast"].astype(int) == trip[0])
+                    & (df_folds["best_macd_slow"].astype(int) == trip[1])
+                    & (df_folds["best_macd_signal"].astype(int) == trip[2])
+                )
                 avg_sharpe = df_folds.loc[tup_mask, "oos_sharpe"].mean()
                 if avg_sharpe > best_avg_sharpe:
                     best_avg_sharpe = avg_sharpe
@@ -1090,7 +1230,7 @@ def main(skip_wf: bool = False, quick: bool = False, random_runs: int = 1000):
         final_ts = df_folds["best_ts"].median()
         final_atr = df_folds["best_atr"].median()
         final_params = (final_fast, final_slow, final_signal, final_ts, final_atr)
-        
+
         # 4. Deflation Test
         print("  Running deflation test (shuffled returns)...")
         avg_shuffled_sharpe = run_deflation_test(symbol_cfg, df_1h, df_1d, final_params)
@@ -1099,7 +1239,11 @@ def main(skip_wf: bool = False, quick: bool = False, random_runs: int = 1000):
         # ── Degradation & Stability Analysis ────────────────
         mean_train_sharpe = df_folds["train_sharpe"].mean()
         mean_oos_sharpe = df_folds["oos_sharpe"].mean()
-        overall_degradation = (mean_train_sharpe - mean_oos_sharpe) / mean_train_sharpe if mean_train_sharpe > 0 else 0.0
+        overall_degradation = (
+            (mean_train_sharpe - mean_oos_sharpe) / mean_train_sharpe
+            if mean_train_sharpe > 0
+            else 0.0
+        )
 
         n_overfit = (df_folds["degradation"] > 0.50).sum()
         n_oos_gt_train = (df_folds["oos_sharpe"] > df_folds["train_sharpe"]).sum()
@@ -1110,32 +1254,64 @@ def main(skip_wf: bool = False, quick: bool = False, random_runs: int = 1000):
         mean_sharpe_se = df_folds["sharpe_se"].mean()
 
         # Print symbol summary
-        print(f"\nOptimization Folds for {symbol} (Grid search completed in {time.time() - start_time:.1f}s):")
-        print(df_folds[["fold", "best_params", "train_sharpe", "oos_sharpe", "oos_pnl", "oos_trades", "status"]].to_string(index=False))
+        print(
+            f"\nOptimization Folds for {symbol} (Grid search completed in {time.time() - start_time:.1f}s):"
+        )
+        print(
+            df_folds[
+                [
+                    "fold",
+                    "best_params",
+                    "train_sharpe",
+                    "oos_sharpe",
+                    "oos_pnl",
+                    "oos_trades",
+                    "status",
+                ]
+            ].to_string(index=False)
+        )
         print(f"\nMACD tuple frequency across folds (modal selection):")
         for tup_str, count in macd_dist:
             bar = "#" * count
-            selected = " [SELECTED]" if tup_str == f"({final_fast},{final_slow},{final_signal})" else ""
+            selected = (
+                " [SELECTED]"
+                if tup_str == f"({final_fast},{final_slow},{final_signal})"
+                else ""
+            )
             print(f"  MACD{tup_str}: {count} folds {bar}{selected}")
         print(f"\nParameter Stability Report (CV):")
-        print(f"  Fast MACD CV: {fast_cv:.2f} | Slow MACD CV: {slow_cv:.2f} | Trailing Stop CV: {ts_cv:.2f} | ATR Stop CV: {atr_cv:.2f}")
-        print(f"  Selected Final Parameters (modal MACD): MACD({final_fast}, {final_slow}, {final_signal}), Trailing={final_ts:.0%}, ATR={final_atr:.1f}x")
-        print(f"  Deflation Test Avg Sharpe on Shuffled: {avg_shuffled_sharpe:+.2f} ({deflation_status})")
+        print(
+            f"  Fast MACD CV: {fast_cv:.2f} | Slow MACD CV: {slow_cv:.2f} | Trailing Stop CV: {ts_cv:.2f} | ATR Stop CV: {atr_cv:.2f}"
+        )
+        print(
+            f"  Selected Final Parameters (modal MACD): MACD({final_fast}, {final_slow}, {final_signal}), Trailing={final_ts:.0%}, ATR={final_atr:.1f}x"
+        )
+        print(
+            f"  Deflation Test Avg Sharpe on Shuffled: {avg_shuffled_sharpe:+.2f} ({deflation_status})"
+        )
         print(f"\nDegradation & OOS Stability:")
-        print(f"  Mean Train Sharpe: {mean_train_sharpe:+.2f} | Mean OOS Sharpe: {mean_oos_sharpe:+.2f} "
-              f"(±{mean_sharpe_se:.2f} SE)")
-        print(f"  Overall Degradation: {overall_degradation:.0%} "
-              f"({'OVERFIT' if overall_degradation > 0.50 else 'OK' if overall_degradation >= 0 else 'OOS > TRAIN [!]'})")
-        print(f"  Folds with degradation > 50%: {n_overfit}/{n_folds} ({n_overfit/n_folds:.0%})")
+        print(
+            f"  Mean Train Sharpe: {mean_train_sharpe:+.2f} | Mean OOS Sharpe: {mean_oos_sharpe:+.2f} "
+            f"(±{mean_sharpe_se:.2f} SE)"
+        )
+        print(
+            f"  Overall Degradation: {overall_degradation:.0%} "
+            f"({'OVERFIT' if overall_degradation > 0.50 else 'OK' if overall_degradation >= 0 else 'OOS > TRAIN [!]'})"
+        )
+        print(
+            f"  Folds with degradation > 50%: {n_overfit}/{n_folds} ({n_overfit / n_folds:.0%})"
+        )
         print(f"  Folds where OOS > Train (suspicious): {n_oos_gt_train}/{n_folds}")
 
         # ── Data sufficiency warning (e.g., SOL) ──────────
         n_low_trades = (df_folds["oos_trades"] < 15).sum()
         if n_low_trades > n_folds * 0.5:
-            print(f"  [!] DATA WARNING: {n_low_trades}/{n_folds} folds have <15 OOS trades. "
-                  f"Results are statistically unreliable -- consider using BTC parameters or dropping this symbol.")
+            print(
+                f"  [!] DATA WARNING: {n_low_trades}/{n_folds} folds have <15 OOS trades. "
+                f"Results are statistically unreliable -- consider using BTC parameters or dropping this symbol."
+            )
         print("-" * 75 + "\n")
-        
+
         # ── Inter-Fold Equity Chaining ─────────────────────
         # Each fold runs with its own $10,000 starting capital, producing
         # PnL values that embed independent compounding. Without chaining,
@@ -1163,7 +1339,7 @@ def main(skip_wf: bool = False, quick: bool = False, random_runs: int = 1000):
             "final_params": final_params,
             "cv": {"fast": fast_cv, "slow": slow_cv, "ts": ts_cv, "atr": atr_cv},
             "deflation_sharpe": avg_shuffled_sharpe,
-            "trades": symbol_oos_trades
+            "trades": symbol_oos_trades,
         }
         all_oos_trades.extend(symbol_oos_trades)
 
@@ -1177,6 +1353,7 @@ def main(skip_wf: bool = False, quick: bool = False, random_runs: int = 1000):
     # Persist WF cache to disk
     if wf_params_cache:
         import json
+
         WF_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
         with open(WF_CACHE_PATH, "w") as f:
             json.dump(wf_params_cache, f, indent=2)
@@ -1197,7 +1374,13 @@ def main(skip_wf: bool = False, quick: bool = False, random_runs: int = 1000):
     print("=========================================================================\n")
 
     # Collect fixed params and data — BTC & ETH only (fast iteration)
-    multi_symbols = ["BTC/USDT:USDT", "ETH/USDT:USDT", "XRP/USDT:USDT", "SOL/USDT:USDT", "LTC/USDT:USDT"]
+    multi_symbols = [
+        "BTC/USDT:USDT",
+        "ETH/USDT:USDT",
+        "XRP/USDT:USDT",
+        "SOL/USDT:USDT",
+        "LTC/USDT:USDT",
+    ]
     multi_params = {}
     multi_configs = {}
     multi_1h = {}
@@ -1211,17 +1394,30 @@ def main(skip_wf: bool = False, quick: bool = False, random_runs: int = 1000):
             continue
 
         final_params = symbol_results[symbol]["final_params"]
-        final_fast, final_slow, final_signal, final_ts_fixed, final_atr_fixed = final_params
-        multi_params[symbol] = (final_fast, final_slow, final_signal, final_ts_fixed, final_atr_fixed)
+        final_fast, final_slow, final_signal, final_ts_fixed, final_atr_fixed = (
+            final_params
+        )
+        multi_params[symbol] = (
+            final_fast,
+            final_slow,
+            final_signal,
+            final_ts_fixed,
+            final_atr_fixed,
+        )
 
         symbol_cfg = get_symbol_config(global_config, symbol)
         symbol_cfg["risk"]["initial_capital"] = 10000.0
         symbol_cfg["risk"]["max_position_pct"] = 0.20
         symbol_cfg["regime"] = {
-            "trending": {"adx_min": 25, "di_ratio_strong": 1.3, "di_ratio_reverse": 0.77},
+            "trending": {
+                "adx_min": 25,
+                "di_ratio_strong": 1.3,
+                "di_ratio_reverse": 0.77,
+            },
             "ranging": {"adx_max": 20, "bb_width_max": 0.04, "vol_max": 0.50},
             "volatile": {"atr_mult": 2.0, "vol_absolute": 1.0, "bb_width_min": 0.08},
-            "hysteresis_bars": 2, "lookback_bars": 100,
+            "hysteresis_bars": 2,
+            "lookback_bars": 100,
         }
         multi_configs[symbol] = symbol_cfg
 
@@ -1229,16 +1425,25 @@ def main(skip_wf: bool = False, quick: bool = False, random_runs: int = 1000):
         multi_1h[symbol] = pd.read_parquet(filepath)
         multi_1d[symbol] = _resample_to_1d(multi_1h[symbol])
 
-        print(f"  {symbol}: MACD({final_fast},{final_slow},{final_signal}) "
-              f"T={final_ts_fixed:.0%} ATR={final_atr_fixed:.1f}x")
+        print(
+            f"  {symbol}: MACD({final_fast},{final_slow},{final_signal}) "
+            f"T={final_ts_fixed:.0%} ATR={final_atr_fixed:.1f}x"
+        )
 
     WARMUP_PCT = 0.60  # First 60% = warmup, last 40% = out-of-sample test
-    print(f"\n  Running bar-by-bar multi-asset backtest "
-          f"(warmup={WARMUP_PCT:.0%}, test={(1-WARMUP_PCT):.0%})...")
+    print(
+        f"\n  Running bar-by-bar multi-asset backtest "
+        f"(warmup={WARMUP_PCT:.0%}, test={(1 - WARMUP_PCT):.0%})..."
+    )
     t0 = time.time()
     result_multi = run_true_multi_asset_backtest(
-        multi_params, multi_configs, multi_1h, multi_1d,
-        initial_capital=10000.0, max_position_pct=0.20, max_concurrent=3,
+        multi_params,
+        multi_configs,
+        multi_1h,
+        multi_1d,
+        initial_capital=10000.0,
+        max_position_pct=0.20,
+        max_concurrent=3,
         warmup_pct=WARMUP_PCT,
     )
     elapsed = time.time() - t0
@@ -1272,28 +1477,40 @@ def main(skip_wf: bool = False, quick: bool = False, random_runs: int = 1000):
         sym_trades[sym] = sym_trades.get(sym, 0) + 1
 
     print(f"\nMulti-Asset Backtest Results (shared $10k, bar-by-bar):")
-    print(f"  {'Symbol':<8} {'Trades':>7} {'PnL':>12} {'Sharpe':>8} {'DD':>6} {'WR':>6}")
-    print(f"  {'-'*8} {'-'*7} {'-'*12} {'-'*8} {'-'*6} {'-'*6}")
+    print(
+        f"  {'Symbol':<8} {'Trades':>7} {'PnL':>12} {'Sharpe':>8} {'DD':>6} {'WR':>6}"
+    )
+    print(f"  {'-' * 8} {'-' * 7} {'-' * 12} {'-' * 8} {'-' * 6} {'-' * 6}")
     for sym in multi_1h:
         sym_short = sym.split("/")[0]
         # Match by short name or full symbol
-        sym_t = [t for t in fp_executed if t.get("symbol", "").split("/")[0] == sym_short]
+        sym_t = [
+            t for t in fp_executed if t.get("symbol", "").split("/")[0] == sym_short
+        ]
         if sym_t:
             sym_m = calculate_metrics(sym_t, initial_capital=10000.0)
-            print(f"  {sym_short:<8} {len(sym_t):>7} ${sym_pnl.get(sym, 0) + sym_pnl.get(sym_short, 0):>+10,.0f} "
-                  f"{sym_m['sharpe_ratio']:>8.2f} {sym_m['max_drawdown_pct']:>5.1f}% "
-                  f"{sym_m['win_rate']:>5.1f}%")
-    print(f"\n  Portfolio: {len(fp_executed)} trades | "
-          f"PnL=${fp_total_pnl:+,.0f} ({fp_total_pnl/100:.1f}%) | "
-          f"Sharpe={fp_sharpe:.2f} | DD={fp_metrics.get('max_drawdown_pct'):.1f}% | "
-          f"WR={fp_metrics.get('win_rate'):.1f}%")
-    print(f"  Skipped: {result_multi['skipped_concentration']} (concentration) + "
-          f"{result_multi['skipped_capital']} (capital) + "
-          f"{result_multi.get('skipped_circuit_breaker', 0)} (CB halts)")
-    if result_multi.get('cb_total_halt_bars', 0) > 0:
-        print(f"  Circuit Breaker: {result_multi.get('skipped_circuit_breaker', 0)} halts, "
-              f"{result_multi['cb_total_halt_bars']} bars halted "
-              f"({result_multi['cb_total_halt_bars']/24:.0f} days)")
+            print(
+                f"  {sym_short:<8} {len(sym_t):>7} ${sym_pnl.get(sym, 0) + sym_pnl.get(sym_short, 0):>+10,.0f} "
+                f"{sym_m['sharpe_ratio']:>8.2f} {sym_m['max_drawdown_pct']:>5.1f}% "
+                f"{sym_m['win_rate']:>5.1f}%"
+            )
+    print(
+        f"\n  Portfolio: {len(fp_executed)} trades | "
+        f"PnL=${fp_total_pnl:+,.0f} ({fp_total_pnl / 100:.1f}%) | "
+        f"Sharpe={fp_sharpe:.2f} | DD={fp_metrics.get('max_drawdown_pct'):.1f}% | "
+        f"WR={fp_metrics.get('win_rate'):.1f}%"
+    )
+    print(
+        f"  Skipped: {result_multi['skipped_concentration']} (concentration) + "
+        f"{result_multi['skipped_capital']} (capital) + "
+        f"{result_multi.get('skipped_circuit_breaker', 0)} (CB halts)"
+    )
+    if result_multi.get("cb_total_halt_bars", 0) > 0:
+        print(
+            f"  Circuit Breaker: {result_multi.get('skipped_circuit_breaker', 0)} halts, "
+            f"{result_multi['cb_total_halt_bars']} bars halted "
+            f"({result_multi['cb_total_halt_bars'] / 24:.0f} days)"
+        )
     print(f"  Max Concurrent: {fp_max_conc} | Time: {elapsed:.0f}s")
     print()
 
@@ -1310,21 +1527,40 @@ def main(skip_wf: bool = False, quick: bool = False, random_runs: int = 1000):
 
     # Match actual signal counts from multi-asset results
     total_signals_actual = len(fp_executed) + result_multi["skipped_concentration"]
-    skip_rate = result_multi["skipped_concentration"] / total_signals_actual if total_signals_actual > 0 else 0
+    skip_rate = (
+        result_multi["skipped_concentration"] / total_signals_actual
+        if total_signals_actual > 0
+        else 0
+    )
     actual_counts = {}
     for sym in multi_1h:
         sym_short = sym.split("/")[0]
-        sym_trades = len([t for t in fp_executed if t.get("symbol", "").split("/")[0] == sym_short])
-        actual_counts[sym] = int(sym_trades / (1 - skip_rate)) if skip_rate < 1 else sym_trades
+        sym_trades = len(
+            [t for t in fp_executed if t.get("symbol", "").split("/")[0] == sym_short]
+        )
+        actual_counts[sym] = (
+            int(sym_trades / (1 - skip_rate)) if skip_rate < 1 else sym_trades
+        )
 
-    rb_result = run_random_entry_baseline(
-        multi_params, multi_1h, multi_1d,
-        warmup_pct=WARMUP_PCT, max_concurrent=3, max_position_pct=0.20,
-        n_runs=rb_runs, signal_counts=actual_counts,
-    ) if rb_runs > 0 else None
+    rb_result = (
+        run_random_entry_baseline(
+            multi_params,
+            multi_1h,
+            multi_1d,
+            warmup_pct=WARMUP_PCT,
+            max_concurrent=3,
+            max_position_pct=0.20,
+            n_runs=rb_runs,
+            signal_counts=actual_counts,
+        )
+        if rb_runs > 0
+        else None
+    )
 
     if rb_result is not None:
-        print(f"\n  Random-Entry Baseline Results (n={len(rb_result['sharpe_values'])}):")
+        print(
+            f"\n  Random-Entry Baseline Results (n={len(rb_result['sharpe_values'])}):"
+        )
         print(f"    Mean Sharpe:     {rb_result['mean_sharpe']:+.2f}")
         print(f"    Median Sharpe:   {rb_result['median_sharpe']:+.2f}")
         print(f"    Std Sharpe:      {rb_result['std_sharpe']:.2f}")
@@ -1335,13 +1571,23 @@ def main(skip_wf: bool = False, quick: bool = False, random_runs: int = 1000):
         print(f"    Mean Max DD:     {rb_result['dd_values'].mean():.1f}%")
         print(f"    Time:            {rb_result['elapsed']:.0f}s")
 
-        edge_ratio = 2.45 / rb_result['p95_sharpe'] if rb_result['p95_sharpe'] > 0 else float('inf')
+        edge_ratio = (
+            2.45 / rb_result["p95_sharpe"]
+            if rb_result["p95_sharpe"] > 0
+            else float("inf")
+        )
         print(f"\n  Edge Assessment (2023-2026 bull):")
-        print(f"    Actual Sharpe / P95 Random Sharpe = 2.45 / {rb_result['p95_sharpe']:.2f} = {edge_ratio:.2f}x")
+        print(
+            f"    Actual Sharpe / P95 Random Sharpe = 2.45 / {rb_result['p95_sharpe']:.2f} = {edge_ratio:.2f}x"
+        )
         if edge_ratio > 2.0:
-            print(f"    ==> STRONG edge: actual outperforms 95% of random strategies by {edge_ratio:.1f}x")
+            print(
+                f"    ==> STRONG edge: actual outperforms 95% of random strategies by {edge_ratio:.1f}x"
+            )
         elif edge_ratio > 1.5:
-            print(f"    ==> MODERATE edge: actual outperforms random by {edge_ratio:.1f}x")
+            print(
+                f"    ==> MODERATE edge: actual outperforms random by {edge_ratio:.1f}x"
+            )
         elif edge_ratio > 1.0:
             print(f"    ==> WEAK edge: actual slightly better than random")
         else:
@@ -1366,9 +1612,15 @@ def main(skip_wf: bool = False, quick: bool = False, random_runs: int = 1000):
     print(f"  Period: warmup={BEAR_WARMUP:.0%} (until ~2022-01), test=2022 only\n")
 
     result_bear = run_true_multi_asset_backtest(
-        multi_params, multi_configs, multi_1h, multi_1d,
-        initial_capital=10000.0, max_position_pct=0.20, max_concurrent=3,
-        warmup_pct=BEAR_WARMUP, test_end_pct=BEAR_TEST_END,
+        multi_params,
+        multi_configs,
+        multi_1h,
+        multi_1d,
+        initial_capital=10000.0,
+        max_position_pct=0.20,
+        max_concurrent=3,
+        warmup_pct=BEAR_WARMUP,
+        test_end_pct=BEAR_TEST_END,
     )
 
     bear_trades = result_bear["trades"]
@@ -1378,49 +1630,80 @@ def main(skip_wf: bool = False, quick: bool = False, random_runs: int = 1000):
     print(f"  Bear Market Results (shared $10k, 2022):")
     for sym in multi_1h:
         sym_short = sym.split("/")[0]
-        sym_t = [t for t in bear_trades if t.get("symbol", "").split("/")[0] == sym_short]
+        sym_t = [
+            t for t in bear_trades if t.get("symbol", "").split("/")[0] == sym_short
+        ]
         if sym_t:
             sym_m = calculate_metrics(sym_t, initial_capital=10000.0)
             sym_pnl = sum(t["pnl"] for t in sym_t)
-            print(f"    {sym_short:<8} {len(sym_t):>4} trades | "
-                  f"PnL=${sym_pnl:>+8,.0f} | Sharpe={sym_m['sharpe_ratio']:>+5.2f} | "
-                  f"DD={sym_m['max_drawdown_pct']:>5.1f}% | WR={sym_m['win_rate']:>5.1f}%")
+            print(
+                f"    {sym_short:<8} {len(sym_t):>4} trades | "
+                f"PnL=${sym_pnl:>+8,.0f} | Sharpe={sym_m['sharpe_ratio']:>+5.2f} | "
+                f"DD={sym_m['max_drawdown_pct']:>5.1f}% | WR={sym_m['win_rate']:>5.1f}%"
+            )
 
     bear_pnl = result_bear["final_equity"] - 10000.0
-    print(f"\n    Portfolio: {len(bear_trades)} trades | "
-          f"PnL=${bear_pnl:+,.0f} ({bear_pnl/100:.1f}%) | "
-          f"Sharpe={bear_metrics.get('sharpe_ratio', 0):.2f} | "
-          f"DD={bear_metrics.get('max_drawdown_pct', 0):.1f}% | "
-          f"WR={bear_metrics.get('win_rate', 0):.1f}%")
+    print(
+        f"\n    Portfolio: {len(bear_trades)} trades | "
+        f"PnL=${bear_pnl:+,.0f} ({bear_pnl / 100:.1f}%) | "
+        f"Sharpe={bear_metrics.get('sharpe_ratio', 0):.2f} | "
+        f"DD={bear_metrics.get('max_drawdown_pct', 0):.1f}% | "
+        f"WR={bear_metrics.get('win_rate', 0):.1f}%"
+    )
 
     # Random baseline for bear period
     bear_total_sig = len(bear_trades) + result_bear["skipped_concentration"]
-    bear_skip_rate = result_bear["skipped_concentration"] / bear_total_sig if bear_total_sig > 0 else 0
+    bear_skip_rate = (
+        result_bear["skipped_concentration"] / bear_total_sig
+        if bear_total_sig > 0
+        else 0
+    )
     bear_counts = {}
     for sym in multi_1h:
         sym_short = sym.split("/")[0]
-        sym_tr = len([t for t in bear_trades if t.get("symbol", "").split("/")[0] == sym_short])
-        bear_counts[sym] = int(sym_tr / (1 - bear_skip_rate)) if bear_skip_rate < 1 else sym_tr
+        sym_tr = len(
+            [t for t in bear_trades if t.get("symbol", "").split("/")[0] == sym_short]
+        )
+        bear_counts[sym] = (
+            int(sym_tr / (1 - bear_skip_rate)) if bear_skip_rate < 1 else sym_tr
+        )
 
     if not quick:
-        print(f"\n  Random baseline (bear period, {sum(bear_counts.values())} total signals)...")
+        print(
+            f"\n  Random baseline (bear period, {sum(bear_counts.values())} total signals)..."
+        )
         rb_bear = run_random_entry_baseline(
-            multi_params, multi_1h, multi_1d,
-            warmup_pct=BEAR_WARMUP, max_concurrent=3, max_position_pct=0.20,
-            n_runs=max(100, random_runs // 2), signal_counts=bear_counts,
+            multi_params,
+            multi_1h,
+            multi_1d,
+            warmup_pct=BEAR_WARMUP,
+            max_concurrent=3,
+            max_position_pct=0.20,
+            n_runs=max(100, random_runs // 2),
+            signal_counts=bear_counts,
         )
 
         print(f"\n  Bear Market Comparison:")
         print(f"    {'':<25} {'Actual':>10} {'Random Mean':>12} {'Random P95':>12}")
-        print(f"    {'-'*25} {'-'*10} {'-'*12} {'-'*12}")
-        print(f"    {'Sharpe':<25} {bear_metrics.get('sharpe_ratio',0):>10.2f} {rb_bear['mean_sharpe']:>12.2f} {rb_bear['p95_sharpe']:>12.2f}")
-        print(f"    {'PnL':<25} ${bear_pnl:>9,.0f} ${rb_bear['pnl_values'].mean():>11,.0f} —")
-        print(f"    {'Max DD':<25} {bear_metrics.get('max_drawdown_pct',0):>9.1f}% {rb_bear['dd_values'].mean():>11.1f}% —")
+        print(f"    {'-' * 25} {'-' * 10} {'-' * 12} {'-' * 12}")
+        print(
+            f"    {'Sharpe':<25} {bear_metrics.get('sharpe_ratio', 0):>10.2f} {rb_bear['mean_sharpe']:>12.2f} {rb_bear['p95_sharpe']:>12.2f}"
+        )
+        print(
+            f"    {'PnL':<25} ${bear_pnl:>9,.0f} ${rb_bear['pnl_values'].mean():>11,.0f} —"
+        )
+        print(
+            f"    {'Max DD':<25} {bear_metrics.get('max_drawdown_pct', 0):>9.1f}% {rb_bear['dd_values'].mean():>11.1f}% —"
+        )
 
-        if bear_metrics.get('sharpe_ratio', 0) > 0 and rb_bear['mean_sharpe'] < 0:
-            print(f"\n    >>> REGIME FILTER WORKS: bot positive, random negative in bear market")
-        elif bear_metrics.get('sharpe_ratio', 0) > rb_bear['mean_sharpe']:
-            print(f"\n    >>> Bot outperforms random in bear market by {bear_metrics.get('sharpe_ratio',0) - rb_bear['mean_sharpe']:+.2f} Sharpe")
+        if bear_metrics.get("sharpe_ratio", 0) > 0 and rb_bear["mean_sharpe"] < 0:
+            print(
+                f"\n    >>> REGIME FILTER WORKS: bot positive, random negative in bear market"
+            )
+        elif bear_metrics.get("sharpe_ratio", 0) > rb_bear["mean_sharpe"]:
+            print(
+                f"\n    >>> Bot outperforms random in bear market by {bear_metrics.get('sharpe_ratio', 0) - rb_bear['mean_sharpe']:+.2f} Sharpe"
+            )
         else:
             print(f"\n    >>> No edge detected in bear market")
     print()
@@ -1478,7 +1761,9 @@ def main(skip_wf: bool = False, quick: bool = False, random_runs: int = 1000):
         pnl_pct = trade.get("pnl_pct", 0.0)
 
         # ── Settle finished positions ────────────────────
-        finished_keys = [k for k, p in active_positions.items() if p["exit_ts"] <= entry_ts]
+        finished_keys = [
+            k for k, p in active_positions.items() if p["exit_ts"] <= entry_ts
+        ]
         for k in finished_keys:
             pos = active_positions.pop(k)
             realized_pnl = pos["cost"] * (pos["pnl_pct"] / 100.0)
@@ -1486,14 +1771,16 @@ def main(skip_wf: bool = False, quick: bool = False, random_runs: int = 1000):
             equity_curve.append(portfolio_equity)
             equity_timestamps.append(pos["exit_ts"])
 
-            trades_executed.append({
-                "entry_time": pos["entry_ts"],
-                "exit_time": pos["exit_ts"],
-                "pnl": realized_pnl,
-                "pnl_pct": pos["pnl_pct"],
-                "win": realized_pnl > 0,
-                "symbol": sym,
-            })
+            trades_executed.append(
+                {
+                    "entry_time": pos["entry_ts"],
+                    "exit_time": pos["exit_ts"],
+                    "pnl": realized_pnl,
+                    "pnl_pct": pos["pnl_pct"],
+                    "win": realized_pnl > 0,
+                    "symbol": sym,
+                }
+            )
 
         # ── Current cash position ────────────────────────
         num_active = len(active_positions)
@@ -1538,17 +1825,16 @@ def main(skip_wf: bool = False, quick: bool = False, random_runs: int = 1000):
         trades_for_metrics,
         initial_capital=initial_capital,
         start_time=all_oos_trades[0]["entry_time"],
-        end_time=all_oos_trades[-1]["exit_time"]
+        end_time=all_oos_trades[-1]["exit_time"],
     )
 
     # Reconstruct portfolio daily returns from equity curve
-    df_equity = pd.DataFrame({
-        "timestamp": equity_timestamps,
-        "equity": equity_curve
-    })
+    df_equity = pd.DataFrame({"timestamp": equity_timestamps, "equity": equity_curve})
     df_equity["dt"] = pd.to_datetime(df_equity["timestamp"], unit="ms")
     df_equity = df_equity.set_index("dt")
-    daily_equity = df_equity["equity"].resample("1D").last().ffill().fillna(initial_capital)
+    daily_equity = (
+        df_equity["equity"].resample("1D").last().ffill().fillna(initial_capital)
+    )
 
     daily_returns = daily_equity.pct_change().fillna(0.0)
     port_sharpe = 0.0
@@ -1577,14 +1863,22 @@ def main(skip_wf: bool = False, quick: bool = False, random_runs: int = 1000):
         print("  COMPARISON: Walk-Forward Optimal vs Fixed-Parameter")
         print("=" * 73)
         print(f"  {'Metric':<35} {'WF Optimal':>15} {'Fixed-Param':>15}")
-        print(f"  {'-'*35} {'-'*15} {'-'*15}")
+        print(f"  {'-' * 35} {'-' * 15} {'-' * 15}")
         print(f"  {'Portfolio Sharpe':<35} {port_sharpe:>15.2f} {_fp_sharpe:>15.2f}")
         print(f"  {'Total PnL':<35} ${total_pnl:>14,.0f} ${_fp_total_pnl:>14,.0f}")
-        print(f"  {'Max Drawdown':<35} {portfolio_metrics.get('max_drawdown_pct'):>14.1f}% {_fp_metrics.get('max_drawdown_pct'):>14.1f}%")
-        print(f"  {'Win Rate':<35} {portfolio_metrics.get('win_rate'):>14.1f}% {_fp_metrics.get('win_rate'):>14.1f}%")
-        print(f"  {'Trades Executed':<35} {len(trades_executed):>15,} {_fp_executed_count:>15,}")
+        print(
+            f"  {'Max Drawdown':<35} {portfolio_metrics.get('max_drawdown_pct'):>14.1f}% {_fp_metrics.get('max_drawdown_pct'):>14.1f}%"
+        )
+        print(
+            f"  {'Win Rate':<35} {portfolio_metrics.get('win_rate'):>14.1f}% {_fp_metrics.get('win_rate'):>14.1f}%"
+        )
+        print(
+            f"  {'Trades Executed':<35} {len(trades_executed):>15,} {_fp_executed_count:>15,}"
+        )
         cost_of_uncertainty = port_sharpe - _fp_sharpe
-        print(f"  {'Cost of Parameter Uncertainty':<35} {cost_of_uncertainty:>15.2f} Sharpe points")
+        print(
+            f"  {'Cost of Parameter Uncertainty':<35} {cost_of_uncertainty:>15.2f} Sharpe points"
+        )
         print()
 
     # ── Asset Correlation Matrices ─────────────────────────
@@ -1601,7 +1895,7 @@ def main(skip_wf: bool = False, quick: bool = False, random_runs: int = 1000):
         sym_dates = pd.date_range(
             start=pd.to_datetime(all_oos_trades[0]["entry_time"], unit="ms").date(),
             end=pd.to_datetime(all_oos_trades[-1]["exit_time"], unit="ms").date(),
-            freq="1D"
+            freq="1D",
         )
         sym_pnl_series = pd.Series(0.0, index=sym_dates)
         for t in sym_executed:
@@ -1620,7 +1914,9 @@ def main(skip_wf: bool = False, quick: bool = False, random_runs: int = 1000):
 
     # 2. Conditional correlation: only days where BOTH assets have non-zero PnL
     # This measures the real co-movement risk when positions are simultaneously active.
-    print("\nAsset Correlation Matrix -- CONDITIONAL (only days with non-zero PnL for both):")
+    print(
+        "\nAsset Correlation Matrix -- CONDITIONAL (only days with non-zero PnL for both):"
+    )
     cond_corr_data = {}
     for sym_a in symbol_names:
         cond_row = {}
@@ -1633,7 +1929,9 @@ def main(skip_wf: bool = False, quick: bool = False, random_runs: int = 1000):
             if mask.sum() < 5:
                 cond_row[sym_b] = np.nan  # Not enough overlapping trade days
             else:
-                cond_row[sym_b] = round(df_corrs.loc[mask, sym_a].corr(df_corrs.loc[mask, sym_b]), 4)
+                cond_row[sym_b] = round(
+                    df_corrs.loc[mask, sym_a].corr(df_corrs.loc[mask, sym_b]), 4
+                )
         cond_corr_data[sym_a] = cond_row
     cond_corr_df = pd.DataFrame(cond_corr_data)
     # Reorder columns to match index
@@ -1648,18 +1946,32 @@ def main(skip_wf: bool = False, quick: bool = False, random_runs: int = 1000):
             all_corr = corr_matrix_all.loc[sym_a, sym_b]
             cond_corr = cond_corr_df.loc[sym_a, sym_b]
             if not np.isnan(cond_corr) and cond_corr > all_corr + 0.15:
-                print(f"  [!] {sym_a}-{sym_b}: unconditional={all_corr:.3f} -> conditional={cond_corr:.3f} (+{cond_corr-all_corr:+.3f})")
+                print(
+                    f"  [!] {sym_a}-{sym_b}: unconditional={all_corr:.3f} -> conditional={cond_corr:.3f} (+{cond_corr - all_corr:+.3f})"
+                )
     print("=========================================================================\n")
+
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser(description="bocik — Robust Parameter Optimizer")
-    parser.add_argument("--skip-wf", action="store_true",
-                        help="Skip walk-forward optimization (load from cache)")
-    parser.add_argument("--quick", action="store_true",
-                        help="Skip random-entry baselines (fastest iteration)")
-    parser.add_argument("--runs", type=int, default=1000,
-                        help="Random baseline runs (default: 1000, use 100 for dev)")
+    parser.add_argument(
+        "--skip-wf",
+        action="store_true",
+        help="Skip walk-forward optimization (load from cache)",
+    )
+    parser.add_argument(
+        "--quick",
+        action="store_true",
+        help="Skip random-entry baselines (fastest iteration)",
+    )
+    parser.add_argument(
+        "--runs",
+        type=int,
+        default=1000,
+        help="Random baseline runs (default: 1000, use 100 for dev)",
+    )
     args = parser.parse_args()
 
     # Windows multiprocessing protection

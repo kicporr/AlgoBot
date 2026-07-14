@@ -13,6 +13,7 @@ Overfitting flags:
 
 from pathlib import Path
 import sys
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 import time, itertools, pandas as pd, numpy as np
@@ -28,9 +29,15 @@ df_1h = pd.read_parquet(PROJECT_ROOT / "data" / "cache" / "btc_1h_d365.parquet")
 df = df_1h.copy()
 df["dt"] = pd.to_datetime(df["timestamp"], unit="ms")
 df = df.set_index("dt")
-daily = df.resample("1D", closed="left", label="left").agg({
-    "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum",
-})
+daily = df.resample("1D", closed="left", label="left").agg(
+    {
+        "open": "first",
+        "high": "max",
+        "low": "min",
+        "close": "last",
+        "volume": "sum",
+    }
+)
 daily["bar_count"] = df.resample("1D").size()
 daily = daily[daily["bar_count"] >= 12].dropna().reset_index()
 daily["timestamp"] = daily["dt"].astype("int64") // 1_000_000
@@ -43,30 +50,42 @@ n_val = int(n_total * 0.20)
 n_test = n_total - n_train - n_val
 
 train_data = df_1h.iloc[:n_train]
-val_data = df_1h.iloc[n_train:n_train + n_val]
-test_data = df_1h.iloc[n_train + n_val:]
+val_data = df_1h.iloc[n_train : n_train + n_val]
+test_data = df_1h.iloc[n_train + n_val :]
 
 train_1d = df_1d[df_1d["timestamp"] <= train_data["timestamp"].iloc[-1]]
-val_1d = df_1d[(df_1d["timestamp"] > train_data["timestamp"].iloc[-1]) &
-                (df_1d["timestamp"] <= val_data["timestamp"].iloc[-1])]
+val_1d = df_1d[
+    (df_1d["timestamp"] > train_data["timestamp"].iloc[-1])
+    & (df_1d["timestamp"] <= val_data["timestamp"].iloc[-1])
+]
 test_1d = df_1d[df_1d["timestamp"] > val_data["timestamp"].iloc[-1]]
 
-print(f"Total: {n_total:,} bars | Train: {n_train:,} ({n_train/n_total:.0%}) | "
-      f"Val: {n_val:,} ({n_val/n_total:.0%}) | Test: {n_test:,} ({n_test/n_total:.0%})")
+print(
+    f"Total: {n_total:,} bars | Train: {n_train:,} ({n_train / n_total:.0%}) | "
+    f"Val: {n_val:,} ({n_val / n_total:.0%}) | Test: {n_test:,} ({n_test / n_total:.0%})"
+)
 
 base_config = {
-    "exchange": {"name": "bitget", "symbols": ["BTC/USDT"],
-                 "fees": {"taker": 0.001, "maker": 0.001, "slippage": 0.0005}},
+    "exchange": {
+        "name": "bitget",
+        "symbols": ["BTC/USDT"],
+        "fees": {"taker": 0.001, "maker": 0.001, "slippage": 0.0005},
+    },
     "risk": {"initial_capital": 10000, "max_position_pct": 0.95},
     "features": {"max_window_bars": 500, "min_bars_required": 50},
     "strategies": {
         "mean_reversion": {
             "rsi": {"period": 14, "oversold": 30, "overbought": 70},
-            "bollinger": {"period": 20, "std_dev": 2}, "require_both_signals": True,
+            "bollinger": {"period": 20, "std_dev": 2},
+            "require_both_signals": True,
         },
         "mtf_macd_elder": {
             "macd": {"fast": 12, "slow": 26, "signal": 9},
-            "exit": {"trailing_stop_pct": 0.03, "atr_stop_mult": 2.0, "min_hold_bars": 1},
+            "exit": {
+                "trailing_stop_pct": 0.03,
+                "atr_stop_mult": 2.0,
+                "min_hold_bars": 1,
+            },
             "elder_filter": {"require_volume_confirm": False, "allow_shorts": True},
         },
     },
@@ -83,7 +102,11 @@ max_depths = [3, 4]
 learning_rates = [0.02, 0.05]
 n_estimators_list = [100, 200]
 
-combos = list(itertools.product(lambdas, confidence_thresholds, max_depths, learning_rates, n_estimators_list))
+combos = list(
+    itertools.product(
+        lambdas, confidence_thresholds, max_depths, learning_rates, n_estimators_list
+    )
+)
 
 best_val_sharpe = -999
 best_config = None
@@ -95,9 +118,14 @@ for lam, conf, depth, lr, nest in combos:
     config["backtest"] = {"walk_forward_folds": 5, "min_train_fraction": 0.33}
     config["strategies"]["xgboost_cost_aware"] = {
         "model_params": {
-            "n_estimators": nest, "max_depth": depth, "learning_rate": lr,
-            "subsample": 0.7, "colsample_bytree": 0.6,
-            "reg_alpha": 2.0, "reg_lambda": 3.0, "random_state": 42,
+            "n_estimators": nest,
+            "max_depth": depth,
+            "learning_rate": lr,
+            "subsample": 0.7,
+            "colsample_bytree": 0.6,
+            "reg_alpha": 2.0,
+            "reg_lambda": 3.0,
+            "random_state": 42,
         },
         "training": {"retrain_every_candles": 500, "min_train_samples": 1000},
         "cost_filter": {"lambda": lam, "transaction_cost_bps": 30},
@@ -128,14 +156,29 @@ train_results.sort(key=lambda x: -x[5])  # Sort by Sharpe
 top_n = min(10, len(train_results))
 val_results = []
 
-for i, (lam, conf, depth, lr, nest, train_sharpe, train_pnl, train_trades, train_dd) in enumerate(train_results[:top_n]):
+for i, (
+    lam,
+    conf,
+    depth,
+    lr,
+    nest,
+    train_sharpe,
+    train_pnl,
+    train_trades,
+    train_dd,
+) in enumerate(train_results[:top_n]):
     config = base_config.copy()
     config["backtest"] = {"walk_forward_folds": 4, "min_train_fraction": 0.33}
     config["strategies"]["xgboost_cost_aware"] = {
         "model_params": {
-            "n_estimators": nest, "max_depth": depth, "learning_rate": lr,
-            "subsample": 0.7, "colsample_bytree": 0.6,
-            "reg_alpha": 2.0, "reg_lambda": 3.0, "random_state": 42,
+            "n_estimators": nest,
+            "max_depth": depth,
+            "learning_rate": lr,
+            "subsample": 0.7,
+            "colsample_bytree": 0.6,
+            "reg_alpha": 2.0,
+            "reg_lambda": 3.0,
+            "random_state": 42,
         },
         "training": {"retrain_every_candles": 500, "min_train_samples": 1000},
         "cost_filter": {"lambda": lam, "transaction_cost_bps": 30},
@@ -151,15 +194,31 @@ for i, (lam, conf, depth, lr, nest, train_sharpe, train_pnl, train_trades, train
         val_trades = m.get("total_trades", 0)
         val_dd = m.get("max_drawdown_pct", 100)
 
-        val_results.append((lam, conf, depth, lr, nest,
-                           train_sharpe, val_sharpe, train_pnl, val_pnl,
-                           train_trades, val_trades, train_dd, val_dd))
+        val_results.append(
+            (
+                lam,
+                conf,
+                depth,
+                lr,
+                nest,
+                train_sharpe,
+                val_sharpe,
+                train_pnl,
+                val_pnl,
+                train_trades,
+                val_trades,
+                train_dd,
+                val_dd,
+            )
+        )
 
-        print(f"  #{i+1}: lam={lam} conf={conf} depth={depth} lr={lr} nest={nest}")
-        print(f"       Train Sharpe={train_sharpe:.2f} PnL=${train_pnl:.0f} "
-              f"-> Val Sharpe={val_sharpe:.2f} PnL=${val_pnl:.0f}")
+        print(f"  #{i + 1}: lam={lam} conf={conf} depth={depth} lr={lr} nest={nest}")
+        print(
+            f"       Train Sharpe={train_sharpe:.2f} PnL=${train_pnl:.0f} "
+            f"-> Val Sharpe={val_sharpe:.2f} PnL=${val_pnl:.0f}"
+        )
     except Exception as e:
-        print(f"  #{i+1}: FAILED {e}")
+        print(f"  #{i + 1}: FAILED {e}")
 
 # Select best on validation
 if val_results:
@@ -167,7 +226,9 @@ if val_results:
     best = val_results[0]
     lam, conf, depth, lr, nest = best[0], best[1], best[2], best[3], best[4]
     train_sh, val_sh = best[5], best[6]
-    print(f"\nBest on validation: lam={lam} conf={conf} depth={depth} lr={lr} nest={nest}")
+    print(
+        f"\nBest on validation: lam={lam} conf={conf} depth={depth} lr={lr} nest={nest}"
+    )
 else:
     print("No validation results — using defaults")
     lam, conf, depth, lr, nest = 4.0, 0.55, 4, 0.03, 150
@@ -180,9 +241,14 @@ config = base_config.copy()
 config["backtest"] = {"walk_forward_folds": 4, "min_train_fraction": 0.33}
 config["strategies"]["xgboost_cost_aware"] = {
     "model_params": {
-        "n_estimators": nest, "max_depth": depth, "learning_rate": lr,
-        "subsample": 0.7, "colsample_bytree": 0.6,
-        "reg_alpha": 2.0, "reg_lambda": 3.0, "random_state": 42,
+        "n_estimators": nest,
+        "max_depth": depth,
+        "learning_rate": lr,
+        "subsample": 0.7,
+        "colsample_bytree": 0.6,
+        "reg_alpha": 2.0,
+        "reg_lambda": 3.0,
+        "random_state": 42,
     },
     "training": {"retrain_every_candles": 500, "min_train_samples": 1000},
     "cost_filter": {"lambda": lam, "transaction_cost_bps": 30},
@@ -225,7 +291,9 @@ if val_results:
     gap = abs(val_sh - test_sharpe) / max(abs(val_sh), 0.001)
     if gap > 0.5:
         warnings.append(f"LARGE TRAIN-TEST GAP ({gap:.1%}) — overfitting detected")
-    print(f"  Train Sharpe:   {train_sh:.2f} -> Val: {val_sh:.2f} -> Test: {test_sharpe:.2f}")
+    print(
+        f"  Train Sharpe:   {train_sh:.2f} -> Val: {val_sh:.2f} -> Test: {test_sharpe:.2f}"
+    )
 
 if warnings:
     print()

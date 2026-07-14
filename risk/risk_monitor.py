@@ -95,7 +95,11 @@ class RiskMonitor:
         self.peak_equity = max(self.peak_equity, equity)
 
         # Drawdown
-        self.current_drawdown_pct = (self.peak_equity - equity) / self.peak_equity if self.peak_equity > 0 else 0.0
+        self.current_drawdown_pct = (
+            (self.peak_equity - equity) / self.peak_equity
+            if self.peak_equity > 0
+            else 0.0
+        )
         self.max_drawdown_pct = max(self.max_drawdown_pct, self.current_drawdown_pct)
 
         # Unrealized PnL
@@ -171,11 +175,15 @@ class RiskMonitor:
             "position_value_usd": round(self.position_size_btc * self.btc_price, 2),
             "exposure_pct": round(
                 (self.position_size_btc * self.btc_price / self.equity * 100)
-                if self.equity > 0 else 0, 2
+                if self.equity > 0
+                else 0,
+                2,
             ),
             # Trades
             "trade_count": self.trade_count,
-            "win_rate": round(self.win_count / self.trade_count * 100, 2) if self.trade_count > 0 else 0.0,
+            "win_rate": round(self.win_count / self.trade_count * 100, 2)
+            if self.trade_count > 0
+            else 0.0,
             "consecutive_losses": self.consecutive_losses,
             "last_trade_pnl": round(self.last_trade_pnl, 2),
             # Rolling
@@ -201,6 +209,8 @@ class RiskMonitor:
             "equity": round(self.equity, 2),
             "dd_pct": round(self.current_drawdown_pct * 100, 2),
             "trades": self.trade_count,
-            "win_rate": round(self.win_count / self.trade_count * 100, 1) if self.trade_count > 0 else 0.0,
+            "win_rate": round(self.win_count / self.trade_count * 100, 1)
+            if self.trade_count > 0
+            else 0.0,
             "pnl_daily": round(self.daily_pnl, 2),
         }

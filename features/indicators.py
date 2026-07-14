@@ -39,7 +39,9 @@ class IndicatorCalculator:
     # ─── Volatility ────────────────────────────────────────────
 
     @staticmethod
-    def atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
+    def atr(
+        high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14
+    ) -> pd.Series:
         """Average True Range with Wilder's smoothing."""
         prev_close = close.shift(1)
         tr1 = high - low
@@ -61,15 +63,22 @@ class IndicatorCalculator:
         return upper, mid, lower
 
     @staticmethod
-    def historical_volatility(close: pd.Series, period: int = 20, trading_periods: int = 365 * 24) -> pd.Series:
+    def historical_volatility(
+        close: pd.Series, period: int = 20, trading_periods: int = 365 * 24
+    ) -> pd.Series:
         """Annualized historical volatility from log returns."""
         log_ret = np.log(close / close.shift(1))
-        return log_ret.rolling(window=period, min_periods=period).std() * np.sqrt(trading_periods)
+        return log_ret.rolling(window=period, min_periods=period).std() * np.sqrt(
+            trading_periods
+        )
 
     @staticmethod
     def garman_klass(
-        open_: pd.Series, high: pd.Series, low: pd.Series,
-        close: pd.Series, period: int = 20
+        open_: pd.Series,
+        high: pd.Series,
+        low: pd.Series,
+        close: pd.Series,
+        period: int = 20,
     ) -> pd.Series:
         """Garman-Klass volatility estimator.
 
@@ -95,9 +104,7 @@ class IndicatorCalculator:
     # ─── Trend ─────────────────────────────────────────────────
 
     @staticmethod
-    def macd(
-        close: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9
-    ):
+    def macd(close: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9):
         """MACD. Returns (macd_line, signal_line, histogram)."""
         ema_fast = IndicatorCalculator.ema(close, fast)
         ema_slow = IndicatorCalculator.ema(close, slow)
@@ -113,12 +120,14 @@ class IndicatorCalculator:
         curr_diff = macd_line - signal_line
 
         cross = pd.Series(0, index=macd_line.index)
-        cross[(prev_diff < 0) & (curr_diff > 0)] = 1   # Bullish cross
+        cross[(prev_diff < 0) & (curr_diff > 0)] = 1  # Bullish cross
         cross[(prev_diff > 0) & (curr_diff < 0)] = -1  # Bearish cross
         return cross
 
     @staticmethod
-    def adx(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
+    def adx(
+        high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14
+    ) -> pd.Series:
         """Average Directional Index."""
         plus_dm, minus_dm = IndicatorCalculator._directional_movement(high, low)
 
@@ -126,8 +135,12 @@ class IndicatorCalculator:
 
         # Smooth with Wilder's method
         atr = tr.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
-        smoothed_plus_dm = plus_dm.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
-        smoothed_minus_dm = minus_dm.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+        smoothed_plus_dm = plus_dm.ewm(
+            alpha=1 / period, min_periods=period, adjust=False
+        ).mean()
+        smoothed_minus_dm = minus_dm.ewm(
+            alpha=1 / period, min_periods=period, adjust=False
+        ).mean()
 
         plus_di = 100 * smoothed_plus_dm / atr
         minus_di = 100 * smoothed_minus_dm / atr
@@ -143,8 +156,16 @@ class IndicatorCalculator:
         tr = IndicatorCalculator._true_range(high, low, close)
         atr = tr.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
 
-        di_plus = 100 * plus_dm.ewm(alpha=1 / period, min_periods=period, adjust=False).mean() / atr
-        di_minus = 100 * minus_dm.ewm(alpha=1 / period, min_periods=period, adjust=False).mean() / atr
+        di_plus = (
+            100
+            * plus_dm.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+            / atr
+        )
+        di_minus = (
+            100
+            * minus_dm.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+            / atr
+        )
         return di_plus, di_minus
 
     @staticmethod
@@ -190,8 +211,13 @@ class IndicatorCalculator:
         return rsi
 
     @staticmethod
-    def stochastic(high: pd.Series, low: pd.Series, close: pd.Series,
-                   k_period: int = 14, d_period: int = 3):
+    def stochastic(
+        high: pd.Series,
+        low: pd.Series,
+        close: pd.Series,
+        k_period: int = 14,
+        d_period: int = 3,
+    ):
         """Stochastic Oscillator. Returns (%K, %D)."""
         lowest_low = low.rolling(window=k_period, min_periods=k_period).min()
         highest_high = high.rolling(window=k_period, min_periods=k_period).max()
@@ -201,18 +227,23 @@ class IndicatorCalculator:
         return k, d
 
     @staticmethod
-    def cci(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 20) -> pd.Series:
+    def cci(
+        high: pd.Series, low: pd.Series, close: pd.Series, period: int = 20
+    ) -> pd.Series:
         """Commodity Channel Index."""
         tp = (high + low + close) / 3.0
         sma_tp = IndicatorCalculator.sma(tp, period)
         mean_dev = tp.rolling(window=period, min_periods=period).apply(
-            lambda x: np.abs(x - x.mean()).mean(), raw=True,
+            lambda x: np.abs(x - x.mean()).mean(),
+            raw=True,
         )
         cci = (tp - sma_tp) / (0.015 * mean_dev + 1e-12)
         return cci
 
     @staticmethod
-    def williams_r(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
+    def williams_r(
+        high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14
+    ) -> pd.Series:
         """Williams %R."""
         highest_high = high.rolling(window=period, min_periods=period).max()
         lowest_low = low.rolling(window=period, min_periods=period).min()
@@ -235,8 +266,13 @@ class IndicatorCalculator:
         return obv
 
     @staticmethod
-    def mfi(high: pd.Series, low: pd.Series, close: pd.Series,
-            volume: pd.Series, period: int = 14) -> pd.Series:
+    def mfi(
+        high: pd.Series,
+        low: pd.Series,
+        close: pd.Series,
+        volume: pd.Series,
+        period: int = 14,
+    ) -> pd.Series:
         """Money Flow Index."""
         tp = (high + low + close) / 3.0
         raw_money_flow = tp * volume

@@ -51,14 +51,16 @@ class BacktestEngine:
 
         # Fee structure
         fees = config.get("exchange", {}).get("fees", {})
-        self.commission = fees.get("taker", 0.001)        # 0.1% taker fee
+        self.commission = fees.get("taker", 0.001)  # 0.1% taker fee
         self.maker_commission = fees.get("maker", 0.0005)  # 0.05% maker
-        self.slippage = fees.get("slippage", 0.0005)       # 0.05%
+        self.slippage = fees.get("slippage", 0.0005)  # 0.05%
 
         # Risk
         risk_cfg = config.get("risk", {})
         self.initial_capital = risk_cfg.get("initial_capital", 10000)
-        self.max_position_pct = risk_cfg.get("max_position_pct", 0.50)  # Conservative 50%
+        self.max_position_pct = risk_cfg.get(
+            "max_position_pct", 0.50
+        )  # Conservative 50%
 
         # Walk-forward
         bt_cfg = config.get("backtest", {})
@@ -101,16 +103,24 @@ class BacktestEngine:
         # Compute all features once
         logger.info("Computing features for whole dataset...")
         features_df = self.feature_engine.bulk_compute(data, data_4h, data_1d)
-        logger.info(f"Computed {len(features_df.columns)} features for {len(features_df)} bars")
+        logger.info(
+            f"Computed {len(features_df.columns)} features for {len(features_df)} bars"
+        )
 
         # Compute D1 MACD trend for Elder filter (if D1 data available)
-        d1_trends = self._compute_d1_trend_series(data_1d, len(data)) if data_1d is not None else None
+        d1_trends = (
+            self._compute_d1_trend_series(data_1d, len(data))
+            if data_1d is not None
+            else None
+        )
 
         # Walk-forward folds
         result = BacktestResult()
         fold_size = len(data) // self.n_folds
 
-        logger.info(f"Starting walk-forward: {self.n_folds} folds, ~{fold_size} bars each")
+        logger.info(
+            f"Starting walk-forward: {self.n_folds} folds, ~{fold_size} bars each"
+        )
 
         for fold in range(1, self.n_folds):  # Fold 0 has insufficient training data
             train_end = fold * fold_size
@@ -128,7 +138,7 @@ class BacktestEngine:
             strategy = strategy_class(self.config)
 
             # Train on past data (with features for ML strategies)
-            if hasattr(strategy, 'retrain'):
+            if hasattr(strategy, "retrain"):
                 train_features = features_df.iloc[:train_end].copy()
                 train_features["close"] = train_data["close"].values
                 strategy.retrain(train_features)
@@ -147,7 +157,7 @@ class BacktestEngine:
                     trades,
                     self.initial_capital,
                     start_time=test_data["timestamp"].iloc[0],
-                    end_time=test_data["timestamp"].iloc[-1]
+                    end_time=test_data["timestamp"].iloc[-1],
                 )
                 fold_metrics["fold"] = fold
                 result.fold_metrics.append(fold_metrics)
@@ -159,7 +169,7 @@ class BacktestEngine:
             result.trades,
             self.initial_capital,
             start_time=data["timestamp"].iloc[0],
-            end_time=data["timestamp"].iloc[-1]
+            end_time=data["timestamp"].iloc[-1],
         )
         result.equity_curve = self._compute_equity_curve(result.trades)
         result.drawdown_curve = self._compute_drawdown_curve(result.equity_curve)
@@ -201,14 +211,22 @@ class BacktestEngine:
         # Compute all features once
         logger.info("Computing features for ensemble backtest...")
         features_df = self.feature_engine.bulk_compute(data, data_4h, data_1d)
-        logger.info(f"Computed {len(features_df.columns)} features for {len(features_df)} bars")
+        logger.info(
+            f"Computed {len(features_df.columns)} features for {len(features_df)} bars"
+        )
 
-        d1_trends = self._compute_d1_trend_series(data_1d, len(data)) if data_1d is not None else None
+        d1_trends = (
+            self._compute_d1_trend_series(data_1d, len(data))
+            if data_1d is not None
+            else None
+        )
 
         result = BacktestResult()
         fold_size = len(data) // self.n_folds
 
-        logger.info(f"Starting ensemble walk-forward: {self.n_folds} folds, ~{fold_size} bars each")
+        logger.info(
+            f"Starting ensemble walk-forward: {self.n_folds} folds, ~{fold_size} bars each"
+        )
 
         for fold in range(1, self.n_folds):
             train_end = fold * fold_size
@@ -227,7 +245,7 @@ class BacktestEngine:
             for key, cls in strategy_classes.items():
                 strat = cls(self.config)
                 # Train ML strategies
-                if hasattr(strat, 'retrain'):
+                if hasattr(strat, "retrain"):
                     train_features = features_df.iloc[:train_end].copy()
                     train_features["close"] = train_data["close"].values
                     strat.retrain(train_features)
@@ -240,7 +258,7 @@ class BacktestEngine:
             # Set D1 trend for MTF MACD strategy if available
             if d1_trends is not None:
                 mtf_strat = strategies.get("mtf_macd")
-                if mtf_strat and hasattr(mtf_strat, 'set_d1_trend_direct'):
+                if mtf_strat and hasattr(mtf_strat, "set_d1_trend_direct"):
                     # Pre-set initial D1 trend
                     global_idx = test_start
                     if global_idx < len(d1_trends):
@@ -261,7 +279,7 @@ class BacktestEngine:
                     trades,
                     self.initial_capital,
                     start_time=test_data["timestamp"].iloc[0],
-                    end_time=test_data["timestamp"].iloc[-1]
+                    end_time=test_data["timestamp"].iloc[-1],
                 )
                 fold_metrics["fold"] = fold
                 result.fold_metrics.append(fold_metrics)
@@ -277,7 +295,7 @@ class BacktestEngine:
             result.trades,
             self.initial_capital,
             start_time=data["timestamp"].iloc[0],
-            end_time=data["timestamp"].iloc[-1]
+            end_time=data["timestamp"].iloc[-1],
         )
         result.equity_curve = self._compute_equity_curve(result.trades)
         result.drawdown_curve = self._compute_drawdown_curve(result.equity_curve)
@@ -321,11 +339,11 @@ class BacktestEngine:
         entry_regime: Optional[str] = None
 
         in_position = False
-        position_side = ""          # "long" or "short"
+        position_side = ""  # "long" or "short"
         entry_price = 0.0
         entry_bar = 0
         entry_ts = 0
-        highest_since_entry = 0.0   # For trailing stop (long)
+        highest_since_entry = 0.0  # For trailing stop (long)
         lowest_since_entry = float("inf")
         position_size = 0.0
         exit_reason = ""
@@ -333,16 +351,16 @@ class BacktestEngine:
 
         # Dynamic equity tracking
         current_equity = self.initial_capital
-        consecutive_losses = {} # dict for per-strategy tracking
-        consecutive_wins = {}   # dict for per-strategy tracking
+        consecutive_losses = {}  # dict for per-strategy tracking
+        consecutive_wins = {}  # dict for per-strategy tracking
         last_exit_bar = -999  # Cooldown tracker
         last_trade_was_loss = False
         active_strategy_name = "unknown"
         entry_strategy = "unknown"
 
         # Convert pandas structures to list/dicts for massive performance speedup (eliminates .iloc lookup overhead)
-        data_list = data.to_dict('records')
-        features_list = features.to_dict('records') if not features.empty else []
+        data_list = data.to_dict("records")
+        features_list = features.to_dict("records") if not features.empty else []
         d1_trends_list = d1_trends.tolist() if d1_trends is not None else None
 
         for i in range(len(data_list)):
@@ -352,7 +370,11 @@ class BacktestEngine:
             ts = row["timestamp"]
 
             # Update D1 trend if available (for single-strategy mode)
-            if d1_trends_list is not None and strategy is not None and hasattr(strategy, 'set_d1_trend_direct'):
+            if (
+                d1_trends_list is not None
+                and strategy is not None
+                and hasattr(strategy, "set_d1_trend_direct")
+            ):
                 global_idx = test_start_idx + i
                 if global_idx < len(d1_trends_list):
                     strategy.set_d1_trend_direct(d1_trends_list[global_idx])
@@ -360,7 +382,7 @@ class BacktestEngine:
             # Update D1 trend for ensemble router's MTF MACD strategy
             if d1_trends_list is not None and ensemble_router is not None:
                 mtf_strat = ensemble_router.strategies.get("mtf_macd")
-                if mtf_strat and hasattr(mtf_strat, 'set_d1_trend_direct'):
+                if mtf_strat and hasattr(mtf_strat, "set_d1_trend_direct"):
                     global_idx = test_start_idx + i
                     if global_idx < len(d1_trends_list):
                         mtf_strat.set_d1_trend_direct(d1_trends_list[global_idx])
@@ -374,11 +396,23 @@ class BacktestEngine:
                 # Dynamic TP/SL based on volatility
                 # Key insight: SL must be wider than TP to let winners run
                 # Previous config had too-tight SL causing 51% ATR stop exits
-                exit_cfg = self.config.get("strategies", {}).get("mtf_macd_elder", {}).get("exit", {})
-                vol_factor = max(0.5, min(2.0, atr_pct / 2.0))  # Normalize around 2% ATR
-                tp_mult = 2.0 + (vol_factor * 0.5)              # 2.25-3.0x risk (take profits earlier)
-                sl_mult = exit_cfg.get("atr_stop_mult", 2.0 + vol_factor)  # Fallback to vol-derived if not in config
-                trail_pct = exit_cfg.get("trailing_stop_pct", 0.025 + (vol_factor * 0.01))
+                exit_cfg = (
+                    self.config.get("strategies", {})
+                    .get("mtf_macd_elder", {})
+                    .get("exit", {})
+                )
+                vol_factor = max(
+                    0.5, min(2.0, atr_pct / 2.0)
+                )  # Normalize around 2% ATR
+                tp_mult = 2.0 + (
+                    vol_factor * 0.5
+                )  # 2.25-3.0x risk (take profits earlier)
+                sl_mult = exit_cfg.get(
+                    "atr_stop_mult", 2.0 + vol_factor
+                )  # Fallback to vol-derived if not in config
+                trail_pct = exit_cfg.get(
+                    "trailing_stop_pct", 0.025 + (vol_factor * 0.01)
+                )
                 max_bars = 48  # Max 48 hours in a trade
 
                 if position_side == "long":
@@ -391,9 +425,12 @@ class BacktestEngine:
                     if row["high"] >= tp_price:
                         exit_price = tp_price
                         exit_reason = "take_profit"
-                    elif (exit_price is None and pending_signal is not None
-                          and pending_signal == Signal.SHORT
-                          and (i - entry_bar) >= self.min_signal_exit_bars):
+                    elif (
+                        exit_price is None
+                        and pending_signal is not None
+                        and pending_signal == Signal.SHORT
+                        and (i - entry_bar) >= self.min_signal_exit_bars
+                    ):
                         exit_price = row["open"]
                         exit_reason = "signal"
                     elif row["low"] <= trail_price:
@@ -417,9 +454,12 @@ class BacktestEngine:
                     if row["low"] <= tp_price:
                         exit_price = tp_price
                         exit_reason = "take_profit"
-                    elif (exit_price is None and pending_signal is not None
-                          and pending_signal == Signal.LONG
-                          and (i - entry_bar) >= self.min_signal_exit_bars):
+                    elif (
+                        exit_price is None
+                        and pending_signal is not None
+                        and pending_signal == Signal.LONG
+                        and (i - entry_bar) >= self.min_signal_exit_bars
+                    ):
                         exit_price = row["open"]
                         exit_reason = "signal"
                     elif row["high"] >= trail_price:
@@ -456,32 +496,38 @@ class BacktestEngine:
                     # Track streaks per strategy
                     strat_name = entry_strategy
                     if pnl < 0:
-                        consecutive_losses[strat_name] = consecutive_losses.get(strat_name, 0) + 1
+                        consecutive_losses[strat_name] = (
+                            consecutive_losses.get(strat_name, 0) + 1
+                        )
                         consecutive_wins[strat_name] = 0
                         last_trade_was_loss = True
                     else:
-                        consecutive_wins[strat_name] = consecutive_wins.get(strat_name, 0) + 1
+                        consecutive_wins[strat_name] = (
+                            consecutive_wins.get(strat_name, 0) + 1
+                        )
                         consecutive_losses[strat_name] = 0
                         last_trade_was_loss = False
 
-                    trades.append({
-                        "entry_time": entry_ts,
-                        "exit_time": ts,
-                        "side": position_side,
-                        "entry_price": round(entry_price, 2),
-                        "exit_price": round(exit_price, 2),
-                        "quantity": round(position_size, 6),
-                        "pnl": round(pnl, 2),
-                        "pnl_pct": round(net_return * 100, 4),
-                        "exit_reason": exit_reason,
-                        "strategy": entry_strategy,
-                        "bars_held": i - entry_bar,
-                        "theoretical_entry_price": round(entry_theoretical, 2),
-                        "theoretical_exit_price": round(exit_price, 2),
-                        "features_at_signal": entry_features,
-                        "signal_type": entry_signal_type,
-                        "regime": entry_regime,
-                    })
+                    trades.append(
+                        {
+                            "entry_time": entry_ts,
+                            "exit_time": ts,
+                            "side": position_side,
+                            "entry_price": round(entry_price, 2),
+                            "exit_price": round(exit_price, 2),
+                            "quantity": round(position_size, 6),
+                            "pnl": round(pnl, 2),
+                            "pnl_pct": round(net_return * 100, 4),
+                            "exit_reason": exit_reason,
+                            "strategy": entry_strategy,
+                            "bars_held": i - entry_bar,
+                            "theoretical_entry_price": round(entry_theoretical, 2),
+                            "theoretical_exit_price": round(exit_price, 2),
+                            "features_at_signal": entry_features,
+                            "signal_type": entry_signal_type,
+                            "regime": entry_regime,
+                        }
+                    )
 
                     in_position = False
                     position_side = ""
@@ -496,7 +542,7 @@ class BacktestEngine:
                 # Cooldown: skip entry after a losing trade
                 strat_losses = consecutive_losses.get(active_strategy_name, 0)
                 strat_wins = consecutive_wins.get(active_strategy_name, 0)
-                
+
                 if last_trade_was_loss and (i - last_exit_bar) < self.cooldown_bars:
                     pending_signal = None
                 # Halt after 5 consecutive losses for the active strategy
@@ -506,11 +552,17 @@ class BacktestEngine:
                     sig = pending_signal
 
                     # Dynamic position sizing based on streak
-                    sizing_equity = max(current_equity, self.initial_capital * 0.5)  # Floor at 50% of initial
+                    sizing_equity = max(
+                        current_equity, self.initial_capital * 0.5
+                    )  # Floor at 50% of initial
                     if strat_losses >= 2:
-                        size_pct = self.max_position_pct * 0.5  # Half size after 2+ losses
+                        size_pct = (
+                            self.max_position_pct * 0.5
+                        )  # Half size after 2+ losses
                     elif strat_wins >= 3:
-                        size_pct = min(self.max_position_pct * 1.5, 0.75)  # Max 75% of equity
+                        size_pct = min(
+                            self.max_position_pct * 1.5, 0.75
+                        )  # Max 75% of equity
                     else:
                         size_pct = self.max_position_pct
 
@@ -584,9 +636,12 @@ class BacktestEngine:
                 if pending_signal is not None:
                     entry_features = dict(feat) if feat else {}
                     entry_signal_type = pending_signal.name  # "LONG" or "SHORT"
-                    entry_regime = (ensemble_router.current_regime.value
-                                    if ensemble_router and hasattr(ensemble_router, 'current_regime')
-                                    else None)
+                    entry_regime = (
+                        ensemble_router.current_regime.value
+                        if ensemble_router
+                        and hasattr(ensemble_router, "current_regime")
+                        else None
+                    )
                 else:
                     entry_features = None
                     entry_signal_type = None
@@ -596,21 +651,41 @@ class BacktestEngine:
 
     # ─── D1 Trend Helper ───────────────────────────────────────
 
-    def _compute_d1_trend_series(self, data_1d: pd.DataFrame, n_hourly_bars: int) -> pd.Series:
+    def _compute_d1_trend_series(
+        self, data_1d: pd.DataFrame, n_hourly_bars: int
+    ) -> pd.Series:
         """Compute Elder D1 trend, then expand to 1H resolution.
 
         Returns Series of length n_hourly_bars: "UP", "DOWN", or "FLAT".
         Each 1H bar gets the trend from the last completed D1 candle.
         """
         from features.indicators import IndicatorCalculator
+
         ic = IndicatorCalculator()
 
-        macd_fast = self.config.get("strategies", {}).get("mtf_macd_elder", {}).get("macd", {}).get("fast", 12)
-        macd_slow = self.config.get("strategies", {}).get("mtf_macd_elder", {}).get("macd", {}).get("slow", 26)
-        macd_sig = self.config.get("strategies", {}).get("mtf_macd_elder", {}).get("macd", {}).get("signal", 9)
+        macd_fast = (
+            self.config.get("strategies", {})
+            .get("mtf_macd_elder", {})
+            .get("macd", {})
+            .get("fast", 12)
+        )
+        macd_slow = (
+            self.config.get("strategies", {})
+            .get("mtf_macd_elder", {})
+            .get("macd", {})
+            .get("slow", 26)
+        )
+        macd_sig = (
+            self.config.get("strategies", {})
+            .get("mtf_macd_elder", {})
+            .get("macd", {})
+            .get("signal", 9)
+        )
 
         d1_closes = data_1d["close"]
-        macd_line, signal_line, macd_hist = ic.macd(d1_closes, macd_fast, macd_slow, macd_sig)
+        macd_line, signal_line, macd_hist = ic.macd(
+            d1_closes, macd_fast, macd_slow, macd_sig
+        )
 
         hist_slope = macd_hist.diff(1)
         daily_trend = pd.Series("FLAT", index=data_1d.index)
@@ -619,7 +694,9 @@ class BacktestEngine:
 
         # Reindex to 1H: forward-fill daily trend to all hourly bars
         hourly_index = pd.RangeIndex(n_hourly_bars)
-        df_daily = pd.DataFrame({"trend": daily_trend.values}, index=data_1d["timestamp"])
+        df_daily = pd.DataFrame(
+            {"trend": daily_trend.values}, index=data_1d["timestamp"]
+        )
         df_hourly = pd.DataFrame(index=hourly_index)
 
         # Simple: each 24-hour block gets the daily trend

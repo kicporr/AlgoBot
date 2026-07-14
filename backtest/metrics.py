@@ -61,7 +61,11 @@ def calculate_metrics(
     win_rate = len(wins) / len(pnls) if len(pnls) > 0 else 0.0
     avg_win = wins.mean() if len(wins) > 0 else 0.0
     avg_loss = abs(losses.mean()) if len(losses) > 0 else 0.0
-    profit_factor = (wins.sum() / abs(losses.sum())) if len(losses) > 0 and losses.sum() != 0 else float("inf")
+    profit_factor = (
+        (wins.sum() / abs(losses.sum()))
+        if len(losses) > 0 and losses.sum() != 0
+        else float("inf")
+    )
     expectancy = (win_rate * avg_win) - ((1 - win_rate) * avg_loss)
 
     # Equity curve and drawdown
@@ -75,11 +79,19 @@ def calculate_metrics(
     total_return_pct = (total_pnl / initial_capital) * 100
 
     # Determine time span in years
-    entry_times = [t.get("entry_time") for t in trades if t.get("entry_time") is not None]
+    entry_times = [
+        t.get("entry_time") for t in trades if t.get("entry_time") is not None
+    ]
     exit_times = [t.get("exit_time") for t in trades if t.get("exit_time") is not None]
-    
-    t_start = start_time if start_time is not None else (min(entry_times) if entry_times else None)
-    t_end = end_time if end_time is not None else (max(exit_times) if exit_times else None)
+
+    t_start = (
+        start_time
+        if start_time is not None
+        else (min(entry_times) if entry_times else None)
+    )
+    t_end = (
+        end_time if end_time is not None else (max(exit_times) if exit_times else None)
+    )
 
     if t_start is not None and t_end is not None:
         duration_ms = t_end - t_start
@@ -88,21 +100,25 @@ def calculate_metrics(
         years = 1.0
 
     # Annualized return
-    annualized_return = ((1 + total_pnl / initial_capital) ** (1 / years)) - 1 if (years > 0 and (1 + total_pnl / initial_capital) > 0) else 0.0
+    annualized_return = (
+        ((1 + total_pnl / initial_capital) ** (1 / years)) - 1
+        if (years > 0 and (1 + total_pnl / initial_capital) > 0)
+        else 0.0
+    )
 
     # Sharpe ratio (Traditional Daily Sharpe using daily reconstructed equity)
     sharpe = 0.0
     sortino = 0.0
-    
+
     if t_start is not None and t_end is not None:
         start_date = pd.to_datetime(t_start, unit="ms").date()
         end_date = pd.to_datetime(t_end, unit="ms").date()
         if start_date == end_date:
             end_date = start_date + pd.Timedelta(days=1)
-            
+
         daily_dates = pd.date_range(start_date, end_date, freq="1D")
         daily_equity = pd.Series(float(initial_capital), index=daily_dates, dtype=float)
-        
+
         trades_sorted = sorted(trades, key=lambda x: x.get("exit_time", 0))
         current_eq = initial_capital
         for trade in trades_sorted:
@@ -112,26 +128,28 @@ def calculate_metrics(
                 current_eq += trade.get("pnl", 0.0)
                 exit_timestamp = pd.Timestamp(exit_date)
                 daily_equity.loc[exit_timestamp:] = current_eq
-                
+
         daily_returns = daily_equity.pct_change().fillna(0.0)
         mean_daily_ret = daily_returns.mean()
         std_daily_ret = daily_returns.std()
-        
+
         if std_daily_ret > 0:
             sharpe = (mean_daily_ret / std_daily_ret) * np.sqrt(365.25)
-            
+
         downside_returns = daily_returns[daily_returns < 0]
         if len(downside_returns) > 1:
             downside_std = downside_returns.std()
             if downside_std > 0:
                 sortino = (mean_daily_ret / downside_std) * np.sqrt(365.25)
-                
+
     # Fallback to trade-based calculations if dates are not available
     if sharpe == 0.0 and len(pnls) > 1:
         trade_returns = pnls / initial_capital
         if trade_returns.std() > 0:
             trades_per_year = len(pnls) / years if years > 0 else 80.0
-            sharpe = (trade_returns.mean() / trade_returns.std()) * np.sqrt(trades_per_year)
+            sharpe = (trade_returns.mean() / trade_returns.std()) * np.sqrt(
+                trades_per_year
+            )
 
     if sortino == 0.0 and len(losses) > 1:
         trade_returns = pnls / initial_capital
@@ -176,8 +194,12 @@ def calculate_metrics(
         "win_rate": round(win_rate * 100, 2),
         "avg_win": round(avg_win, 2),
         "avg_loss": round(avg_loss, 2),
-        "win_loss_ratio": round(avg_win / avg_loss, 2) if avg_loss > 0 else float("inf"),
-        "profit_factor": round(profit_factor, 2) if not np.isinf(profit_factor) else "inf",
+        "win_loss_ratio": round(avg_win / avg_loss, 2)
+        if avg_loss > 0
+        else float("inf"),
+        "profit_factor": round(profit_factor, 2)
+        if not np.isinf(profit_factor)
+        else "inf",
         "expectancy": round(expectancy, 2),
         "avg_trade_pnl": round(pnls.mean(), 2),
         "max_consecutive_losses": max_consecutive_losses,
@@ -186,7 +208,9 @@ def calculate_metrics(
     }
 
 
-def calculate_fold_metrics(trades_per_fold: List[List[dict]], initial_capital: float = 10000) -> List[dict]:
+def calculate_fold_metrics(
+    trades_per_fold: List[List[dict]], initial_capital: float = 10000
+) -> List[dict]:
     """Calculate metrics for each fold in walk-forward CV."""
     fold_results = []
     for fold_idx, trades in enumerate(trades_per_fold):
@@ -205,15 +229,20 @@ def fold_stability_report(fold_metrics: List[dict]) -> dict:
         return {}
 
     metrics_of_interest = [
-        "sharpe_ratio", "total_return_pct", "win_rate",
-        "profit_factor", "max_drawdown_pct",
+        "sharpe_ratio",
+        "total_return_pct",
+        "win_rate",
+        "profit_factor",
+        "max_drawdown_pct",
     ]
 
     report = {}
     for key in metrics_of_interest:
         values = [fm.get(key, 0) for fm in fold_metrics]
         # Filter out "inf" strings
-        numeric_values = [v for v in values if isinstance(v, (int, float)) and not np.isinf(v)]
+        numeric_values = [
+            v for v in values if isinstance(v, (int, float)) and not np.isinf(v)
+        ]
         if numeric_values:
             report[key] = {
                 "mean": round(np.mean(numeric_values), 4),

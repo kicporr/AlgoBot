@@ -14,7 +14,7 @@ class TestTelegramReports(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.db_path = os.path.join(self.temp_dir.name, "test_trading.db")
-        
+
         # Setup dummy database with trades table
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -40,23 +40,10 @@ class TestTelegramReports(unittest.TestCase):
 
         # Mock Bot Config
         self.config = {
-            "bot": {
-                "name": "bocik_test",
-                "version": "1.0.0",
-                "mode": "paper"
-            },
-            "exchange": {
-                "name": "bitget",
-                "symbols": ["BTC/USDT:USDT"]
-            },
-            "data": {
-                "database": {
-                    "path": self.db_path
-                }
-            },
-            "paths": {
-                "logs_dir": self.temp_dir.name
-            },
+            "bot": {"name": "bocik_test", "version": "1.0.0", "mode": "paper"},
+            "exchange": {"name": "bitget", "symbols": ["BTC/USDT:USDT"]},
+            "data": {"database": {"path": self.db_path}},
+            "paths": {"logs_dir": self.temp_dir.name},
             "monitoring": {
                 "telegram": {
                     "enabled": True,
@@ -64,13 +51,11 @@ class TestTelegramReports(unittest.TestCase):
                         "enabled": True,
                         "time": "22:00",
                         "interval": "both",
-                        "weekly_day": "Sunday"
-                    }
+                        "weekly_day": "Sunday",
+                    },
                 }
             },
-            "risk": {
-                "initial_capital": 10000.0
-            }
+            "risk": {"initial_capital": 10000.0},
         }
 
     def tearDown(self):
@@ -80,7 +65,7 @@ class TestTelegramReports(unittest.TestCase):
         """Test that generate_equity_chart successfully creates a PNG file."""
         output_file = os.path.join(self.temp_dir.name, "test_chart.png")
         equity_series = [10000.0, 10100.0, 9950.0, 10300.0]
-        
+
         res = generate_equity_chart(equity_series, output_file)
         self.assertTrue(res)
         self.assertTrue(os.path.exists(output_file))
@@ -90,7 +75,7 @@ class TestTelegramReports(unittest.TestCase):
         """Test that single value equity series handles drawing properly."""
         output_file = os.path.join(self.temp_dir.name, "test_chart_single.png")
         equity_series = [10000.0, 10000.0]
-        
+
         res = generate_equity_chart(equity_series, output_file)
         self.assertTrue(res)
         self.assertTrue(os.path.exists(output_file))
@@ -111,16 +96,22 @@ class TestTelegramReports(unittest.TestCase):
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         # Trade 1: 25h ago (outside daily, inside weekly)
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO trades (entry_time, exit_time, side, entry_price, exit_price, quantity, pnl, pnl_pct, strategy)
             VALUES (?, ?, 'long', 50000.0, 50500.0, 0.1, 50.0, 1.0, 'mtf_macd:BTC/USDT:USDT')
-        """, (yesterday_ms - 3600000, yesterday_ms))
-        
+        """,
+            (yesterday_ms - 3600000, yesterday_ms),
+        )
+
         # Trade 2: 2h ago (inside daily and weekly)
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO trades (entry_time, exit_time, side, entry_price, exit_price, quantity, pnl, pnl_pct, strategy)
             VALUES (?, ?, 'short', 51000.0, 50000.0, 0.1, 100.0, 1.96, 'mtf_macd:ETH/USDT:USDT')
-        """, (recent_ms - 3600000, recent_ms))
+        """,
+            (recent_ms - 3600000, recent_ms),
+        )
         conn.commit()
         conn.close()
 
@@ -138,7 +129,7 @@ class TestTelegramReports(unittest.TestCase):
 
             # Check that send_photo was called on the telegram alerter
             bot.telegram.send_photo.assert_called_once()
-            
+
             # Extract arguments passed to send_photo
             photo_bytes = bot.telegram.send_photo.call_args[0][0]
             caption = bot.telegram.send_photo.call_args[1]["caption"]
@@ -165,16 +156,22 @@ class TestTelegramReports(unittest.TestCase):
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         # Trade 1: 2 days ago (inside weekly)
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO trades (entry_time, exit_time, side, entry_price, exit_price, quantity, pnl, pnl_pct, strategy)
             VALUES (?, ?, 'long', 50000.0, 50500.0, 0.1, 50.0, 1.0, 'mtf_macd:BTC/USDT:USDT')
-        """, (two_days_ago_ms - 3600000, two_days_ago_ms))
-        
+        """,
+            (two_days_ago_ms - 3600000, two_days_ago_ms),
+        )
+
         # Trade 2: 8 days ago (outside weekly)
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO trades (entry_time, exit_time, side, entry_price, exit_price, quantity, pnl, pnl_pct, strategy)
             VALUES (?, ?, 'short', 51000.0, 52000.0, 0.1, -100.0, -1.96, 'mtf_macd:SOL/USDT:USDT')
-        """, (eight_days_ago_ms - 3600000, eight_days_ago_ms))
+        """,
+            (eight_days_ago_ms - 3600000, eight_days_ago_ms),
+        )
         conn.commit()
         conn.close()
 

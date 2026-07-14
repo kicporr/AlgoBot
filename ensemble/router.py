@@ -27,7 +27,9 @@ class EnsembleRouter:
         signal = router.get_signal(candle, features)
     """
 
-    def __init__(self, strategies: dict[str, BaseStrategy], regime_classifier: RegimeClassifier):
+    def __init__(
+        self, strategies: dict[str, BaseStrategy], regime_classifier: RegimeClassifier
+    ):
         self.strategies = strategies
         self.classifier = regime_classifier
         self.current_regime = MarketRegime.UNCLEAR
@@ -110,11 +112,18 @@ class EnsembleRouter:
                 stats[regime] = {
                     "trades": len(pnls),
                     "total_pnl": round(sum(pnls), 2),
-                    "win_rate": round(sum(1 for p in pnls if p > 0) / len(pnls) * 100, 1),
+                    "win_rate": round(
+                        sum(1 for p in pnls if p > 0) / len(pnls) * 100, 1
+                    ),
                     "avg_pnl": round(sum(pnls) / len(pnls), 2),
                 }
             else:
-                stats[regime] = {"trades": 0, "total_pnl": 0, "win_rate": 0, "avg_pnl": 0}
+                stats[regime] = {
+                    "trades": 0,
+                    "total_pnl": 0,
+                    "win_rate": 0,
+                    "avg_pnl": 0,
+                }
         return stats
 
     def reset(self):

@@ -8,6 +8,7 @@ Base = declarative_base()
 
 class Candle(Base):
     """Raw 1-minute OHLCV candle — one per symbol per timestamp."""
+
     __tablename__ = "candles_1m"
 
     symbol = Column(Text, primary_key=True, default="BTC/USDT:USDT")
@@ -21,9 +22,14 @@ class Candle(Base):
 
 class Trade(Base):
     """Completed trade record."""
+
     __tablename__ = "trades"
 
-    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    id = Column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
     entry_time = Column(BigInteger, nullable=False)
     exit_time = Column(BigInteger, nullable=True)
     side = Column(Text, nullable=False)
@@ -43,9 +49,14 @@ class Trade(Base):
 
 class Signal(Base):
     """Logged signals for debugging and analysis."""
+
     __tablename__ = "signals"
 
-    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    id = Column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
     timestamp = Column(BigInteger, nullable=False)
     strategy = Column(Text, nullable=False)
     signal = Column(Text, nullable=False)
@@ -59,6 +70,7 @@ class Signal(Base):
 
 class PerformanceSnapshot(Base):
     """Hourly performance snapshots."""
+
     __tablename__ = "performance_snapshots"
 
     timestamp = Column(BigInteger, primary_key=True)

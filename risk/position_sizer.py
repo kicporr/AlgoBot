@@ -38,7 +38,9 @@ class KellyPositionSizer:
         self.max_kelly_pct = kelly_cfg.get("max_kelly_pct", 0.25)  # Cap at 25%
 
         # Risk limits
-        self.max_risk_per_trade_pct = sizing_cfg.get("max_risk_per_trade_pct", 2.0) / 100
+        self.max_risk_per_trade_pct = (
+            sizing_cfg.get("max_risk_per_trade_pct", 2.0) / 100
+        )
         self.max_position_btc = sizing_cfg.get("max_position_size_btc", 0.1)
         self.max_exposure_pct = sizing_cfg.get("max_total_exposure_pct", 50) / 100
         self.min_position_btc = sizing_cfg.get("min_position_size_btc", 0.0001)
@@ -82,7 +84,9 @@ class KellyPositionSizer:
             Position size in BTC (0 if no position should be taken).
         """
         if btc_price <= 0 or capital <= 0:
-            self._last_reject = f"invalid input: btc_price={btc_price}, capital={capital}"
+            self._last_reject = (
+                f"invalid input: btc_price={btc_price}, capital={capital}"
+            )
             return 0.0
 
         # Volatility adjustment: shrink position when volatility is elevated
@@ -112,12 +116,16 @@ class KellyPositionSizer:
             if avg_loss <= 0:
                 avg_loss = 0.001  # Floor to prevent division by zero
             if avg_win <= 0:
-                avg_win = 0.001  # Floor to prevent division by zero and negative b_ratio
+                avg_win = (
+                    0.001  # Floor to prevent division by zero and negative b_ratio
+                )
 
             b_ratio = avg_win / avg_loss
             if b_ratio <= 0:
                 self.last_size = 0.0
-                self._last_reject = f"b_ratio≤0: avg_win={avg_win:.4f} avg_loss={avg_loss:.4f}"
+                self._last_reject = (
+                    f"b_ratio≤0: avg_win={avg_win:.4f} avg_loss={avg_loss:.4f}"
+                )
                 return 0.0
 
             kelly_f = max(0.0, (win_rate * b_ratio - (1.0 - win_rate)) / b_ratio)
@@ -128,7 +136,9 @@ class KellyPositionSizer:
 
             if half_kelly <= 0:
                 self.last_size = 0.0
-                self._last_reject = f"kelly≤0: wr={win_rate:.2f} b={b_ratio:.2f} kelly_f={kelly_f:.4f}"
+                self._last_reject = (
+                    f"kelly≤0: wr={win_rate:.2f} b={b_ratio:.2f} kelly_f={kelly_f:.4f}"
+                )
                 return 0.0
 
             # Risk capital this trade can risk

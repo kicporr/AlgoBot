@@ -27,6 +27,7 @@ from .resampler import OHLCVResampler
 
 try:
     from .rest_client import BitgetRESTClient
+
     _HAS_REST = True
 except ImportError:
     _HAS_REST = False
@@ -74,6 +75,7 @@ class BitgetWSClient:
         elif _HAS_REST:
             try:
                 from .rest_client import BitgetRESTClient
+
                 self.rest_client = BitgetRESTClient(config)
             except Exception as e:
                 logger.warning(f"REST client unavailable: {e}")
@@ -86,7 +88,10 @@ class BitgetWSClient:
 
         # Registered callbacks
         self._callbacks: dict[str, list[Callable]] = {
-            "1m": [], "1h": [], "4h": [], "1d": [],
+            "1m": [],
+            "1h": [],
+            "4h": [],
+            "1d": [],
         }
 
         # State
@@ -133,19 +138,25 @@ class BitgetWSClient:
 
         # Start consumer thread
         self._consumer_thread = threading.Thread(
-            target=self._consumer_loop, name="bocik-ws-consumer", daemon=True,
+            target=self._consumer_loop,
+            name="bocik-ws-consumer",
+            daemon=True,
         )
         self._consumer_thread.start()
 
         # Start WebSocket connection
         self._ws_thread = threading.Thread(
-            target=self._connect_ws, name="bocik-ws-connector", daemon=True,
+            target=self._connect_ws,
+            name="bocik-ws-connector",
+            daemon=True,
         )
         self._ws_thread.start()
 
         # Start watchdog thread
         self._watchdog_thread = threading.Thread(
-            target=self._watchdog_loop, name=f"bocik-ws-watchdog-{self.symbol_id}", daemon=True
+            target=self._watchdog_loop,
+            name=f"bocik-ws-watchdog-{self.symbol_id}",
+            daemon=True,
         )
         self._watchdog_thread.start()
 
@@ -171,7 +182,9 @@ class BitgetWSClient:
                 self._fire_callbacks(tf, candle)
 
         self._state = WSState.STOPPED
-        logger.info(f"Bitget WS stopped. Rx:{self.candles_received} Proc:{self.candles_processed}")
+        logger.info(
+            f"Bitget WS stopped. Rx:{self.candles_received} Proc:{self.candles_processed}"
+        )
 
     @property
     def state(self) -> WSState:
@@ -217,14 +230,16 @@ class BitgetWSClient:
                 self.reconnect_max_delay,
             )
 
-
     def _on_open(self, ws):
         self._state = WSState.CONNECTED
         self._reconnect_delay = self.reconnect_min_delay
 
         # Start keepalive ping thread
         self._ping_thread = threading.Thread(
-            target=self._ping_loop, args=(ws,), name=f"bocik-ws-ping-{self.symbol_id}", daemon=True
+            target=self._ping_loop,
+            args=(ws,),
+            name=f"bocik-ws-ping-{self.symbol_id}",
+            daemon=True,
         )
         self._ping_thread.start()
 
@@ -234,14 +249,18 @@ class BitgetWSClient:
         # Subscribe to 1m candles
         sub_msg = {
             "op": "subscribe",
-            "args": [{
-                "instType": inst_type,
-                "channel": "candle1m",
-                "instId": self.symbol_id,
-            }],
+            "args": [
+                {
+                    "instType": inst_type,
+                    "channel": "candle1m",
+                    "instId": self.symbol_id,
+                }
+            ],
         }
         ws.send(json.dumps(sub_msg))
-        logger.info(f"✓ Bitget WS connected, subscribed to {self.symbol_id} (instType: {inst_type}) candle1m")
+        logger.info(
+            f"✓ Bitget WS connected, subscribed to {self.symbol_id} (instType: {inst_type}) candle1m"
+        )
 
         # Backfill missed candles after reconnect
         if self.rest_client and self.last_candle_ts > 0 and self.reconnect_count > 0:
@@ -305,9 +324,15 @@ class BitgetWSClient:
 
             # Parse timeframe from channel name
             tf_map = {
-                "candle1m": "1m", "candle5m": "5m", "candle15m": "15m",
-                "candle1H": "1h", "candle4H": "4h", "candle1D": "1d",
-                "candle1Hutc": "1h", "candle4Hutc": "4h", "candle1Dutc": "1d",
+                "candle1m": "1m",
+                "candle5m": "5m",
+                "candle15m": "15m",
+                "candle1H": "1h",
+                "candle4H": "4h",
+                "candle1D": "1d",
+                "candle1Hutc": "1h",
+                "candle4Hutc": "4h",
+                "candle1Dutc": "1d",
             }
             tf = tf_map.get(channel)
             if tf is None:
@@ -442,7 +467,9 @@ class BitgetWSClient:
             return
         logger.info(f"Priming resampler with {hours}h of historical data...")
         try:
-            candles = self.rest_client.fetch_recent(timeframe="1m", hours=hours, symbol=self.symbol)
+            candles = self.rest_client.fetch_recent(
+                timeframe="1m", hours=hours, symbol=self.symbol
+            )
             if candles:
                 valid, rejected = self.validator.validate_batch(candles)
                 logger.info(f"Primed: {len(valid)} valid, {len(rejected)} rejected")

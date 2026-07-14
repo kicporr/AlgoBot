@@ -4,6 +4,7 @@ Uses real feature names from FeatureEngine output.
 """
 
 import sys, os
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
@@ -15,15 +16,23 @@ import numpy as np
 
 
 class TestRegimeClassifier:
-
     @staticmethod
     def _make_classifier(config_overrides=None):
         from ensemble.regime_classifier import RegimeClassifier
+
         config = {
             "regime": {
-                "trending": {"adx_min": 25, "di_ratio_strong": 1.3, "di_ratio_reverse": 0.77},
+                "trending": {
+                    "adx_min": 25,
+                    "di_ratio_strong": 1.3,
+                    "di_ratio_reverse": 0.77,
+                },
                 "ranging": {"adx_max": 20, "bb_width_max": 0.04, "vol_max": 0.50},
-                "volatile": {"atr_mult": 2.0, "vol_absolute": 1.0, "bb_width_min": 0.08},
+                "volatile": {
+                    "atr_mult": 2.0,
+                    "vol_absolute": 1.0,
+                    "bb_width_min": 0.08,
+                },
                 "hysteresis_bars": 2,
                 "lookback_bars": 100,
             }
@@ -33,15 +42,22 @@ class TestRegimeClassifier:
     def _make_features(self, **overrides):
         """Build a feature dict with defaults suitable for each test."""
         defaults = {
-            "adx_14": 20.0, "di_plus": 15.0, "di_minus": 15.0,
-            "atr_14": 100.0, "bb_width": 0.03, "volatility_20": 0.30,
-            "garman_klass": 0.02, "price": 50000, "dist_sma_50": 0.01,
+            "adx_14": 20.0,
+            "di_plus": 15.0,
+            "di_minus": 15.0,
+            "atr_14": 100.0,
+            "bb_width": 0.03,
+            "volatility_20": 0.30,
+            "garman_klass": 0.02,
+            "price": 50000,
+            "dist_sma_50": 0.01,
         }
         defaults.update(overrides)
         return defaults
 
     def test_classify_trending(self):
         from ensemble.regime_classifier import MarketRegime
+
         rc = self._make_classifier()
         feats = self._make_features(adx_14=30.0, di_plus=30.0, di_minus=15.0)
         # Need 2 bars for hysteresis
@@ -51,6 +67,7 @@ class TestRegimeClassifier:
 
     def test_classify_ranging(self):
         from ensemble.regime_classifier import MarketRegime
+
         rc = self._make_classifier()
         feats = self._make_features(adx_14=15.0, bb_width=0.02, volatility_20=0.20)
         rc.classify(feats)
@@ -59,6 +76,7 @@ class TestRegimeClassifier:
 
     def test_classify_volatile(self):
         from ensemble.regime_classifier import MarketRegime
+
         rc = self._make_classifier()
         # High ATR relative to average + high HV
         rc._atr_samples = [50.0] * 10  # avg = 50
@@ -69,6 +87,7 @@ class TestRegimeClassifier:
 
     def test_classify_unclear(self):
         from ensemble.regime_classifier import MarketRegime
+
         rc = self._make_classifier()
         feats = self._make_features(adx_14=22.0)  # Between trending and ranging
         rc.classify(feats)
@@ -77,6 +96,7 @@ class TestRegimeClassifier:
 
     def test_hysteresis_prevents_rapid_flips(self):
         from ensemble.regime_classifier import MarketRegime
+
         rc = self._make_classifier()
         # Force trending
         trending_feats = self._make_features(adx_14=30, di_plus=40, di_minus=15)
@@ -84,7 +104,9 @@ class TestRegimeClassifier:
         rc.classify(trending_feats)  # Now locked to TRENDING
 
         # One bar of ranging shouldn't flip
-        ranging_feats = self._make_features(adx_14=15, bb_width=0.02, volatility_20=0.20)
+        ranging_feats = self._make_features(
+            adx_14=15, bb_width=0.02, volatility_20=0.20
+        )
         regime = rc.classify(ranging_feats)
         assert regime == MarketRegime.TRENDING  # Stays trending
 
@@ -95,6 +117,7 @@ class TestRegimeClassifier:
 
     def test_reset(self):
         from ensemble.regime_classifier import MarketRegime
+
         rc = self._make_classifier()
         feats = self._make_features(adx_14=30, di_plus=40, di_minus=15)
         rc.classify(feats)
@@ -115,7 +138,6 @@ class TestRegimeClassifier:
 
 
 class TestEnsembleRouter:
-
     @staticmethod
     def _make_router():
         from ensemble.regime_classifier import RegimeClassifier
@@ -127,8 +149,15 @@ class TestEnsembleRouter:
             "strategies": {
                 "mtf_macd_elder": {
                     "macd": {"fast": 12, "slow": 26, "signal": 9},
-                    "exit": {"trailing_stop_pct": 0.03, "atr_stop_mult": 2.0, "min_hold_bars": 1},
-                    "elder_filter": {"require_volume_confirm": False, "allow_shorts": True},
+                    "exit": {
+                        "trailing_stop_pct": 0.03,
+                        "atr_stop_mult": 2.0,
+                        "min_hold_bars": 1,
+                    },
+                    "elder_filter": {
+                        "require_volume_confirm": False,
+                        "allow_shorts": True,
+                    },
                 },
                 "mean_reversion": {
                     "rsi": {"period": 14, "oversold": 30, "overbought": 70},
@@ -137,9 +166,17 @@ class TestEnsembleRouter:
                 },
             },
             "regime": {
-                "trending": {"adx_min": 25, "di_ratio_strong": 1.3, "di_ratio_reverse": 0.77},
+                "trending": {
+                    "adx_min": 25,
+                    "di_ratio_strong": 1.3,
+                    "di_ratio_reverse": 0.77,
+                },
                 "ranging": {"adx_max": 20, "bb_width_max": 0.04, "vol_max": 0.50},
-                "volatile": {"atr_mult": 2.0, "vol_absolute": 1.0, "bb_width_min": 0.08},
+                "volatile": {
+                    "atr_mult": 2.0,
+                    "vol_absolute": 1.0,
+                    "bb_width_min": 0.08,
+                },
                 "hysteresis_bars": 1,  # No hysteresis for tests
                 "lookback_bars": 100,
             },
@@ -162,11 +199,18 @@ class TestEnsembleRouter:
         rc.current_regime = MarketRegime.TRENDING
         macd.d1_trend = "UP"
 
-        features = pd.Series({
-            "macd_cross": 1, "macd": 150, "macd_signal": 100, "macd_hist": 50,
-            "volume_sma_ratio": 1.5,
-            "adx_14": 30, "di_plus": 40, "di_minus": 15,
-        })
+        features = pd.Series(
+            {
+                "macd_cross": 1,
+                "macd": 150,
+                "macd_signal": 100,
+                "macd_hist": 50,
+                "volume_sma_ratio": 1.5,
+                "adx_14": 30,
+                "di_plus": 40,
+                "di_minus": 15,
+            }
+        )
         candle = {"close": 50000, "open": 49900}
 
         signal = router.get_signal(candle, features)
@@ -181,10 +225,15 @@ class TestEnsembleRouter:
 
         rc.current_regime = MarketRegime.RANGING
 
-        features = pd.Series({
-            "rsi_14": 25, "bb_position": 0.02,
-            "adx_14": 15, "bb_width": 0.02, "volatility_20": 0.20,
-        })
+        features = pd.Series(
+            {
+                "rsi_14": 25,
+                "bb_position": 0.02,
+                "adx_14": 15,
+                "bb_width": 0.02,
+                "volatility_20": 0.20,
+            }
+        )
         candle = {"close": 49000}
 
         signal = router.get_signal(candle, features)
@@ -228,6 +277,7 @@ class TestEnsembleRouter:
     def test_get_active_strategy_name(self):
         from strategies.base import Signal
         from ensemble.regime_classifier import MarketRegime
+
         router, macd, rc = self._make_router()
 
         # Trending: route via get_signal which updates current_regime
@@ -235,8 +285,16 @@ class TestEnsembleRouter:
         macd.d1_trend = "UP"
         _ = router.get_signal(
             {"close": 50000},
-            {"macd_cross": 0, "macd": 100, "macd_signal": 100, "macd_hist": 0,
-             "volume_sma_ratio": 1.0, "adx_14": 30, "di_plus": 40, "di_minus": 15},
+            {
+                "macd_cross": 0,
+                "macd": 100,
+                "macd_signal": 100,
+                "macd_hist": 0,
+                "volume_sma_ratio": 1.0,
+                "adx_14": 30,
+                "di_plus": 40,
+                "di_minus": 15,
+            },
         )
         assert "mtf_macd" in router.get_active_strategy_name().lower()
 
@@ -253,7 +311,6 @@ class TestEnsembleRouter:
 
 
 class TestEnsembleIntegration:
-
     def test_full_pipeline_routing(self):
         """Simulate 500 bars and verify regime routing logic doesn't crash."""
         from ensemble.regime_classifier import RegimeClassifier, MarketRegime
@@ -270,17 +327,27 @@ class TestEnsembleIntegration:
         # Mix: trending at start, ranging in middle, volatile at end
         returns = rng.normal(0.001, 0.01, n // 3)  # Strong trend
         returns = np.concatenate([returns, rng.normal(0, 0.005, n // 3)])  # Range
-        returns = np.concatenate([returns, rng.normal(0, 0.03, n - 2 * (n // 3))])  # Volatile
+        returns = np.concatenate(
+            [returns, rng.normal(0, 0.03, n - 2 * (n // 3))]
+        )  # Volatile
 
         close = 50000 * np.cumprod(1 + returns)
-        o = np.roll(close, 1); o[0] = close[0] * 0.999
+        o = np.roll(close, 1)
+        o[0] = close[0] * 0.999
         h = np.maximum(o, close) * (1 + rng.uniform(0.001, 0.02, n))
         l = np.minimum(o, close) * (1 - rng.uniform(0.001, 0.02, n))
         v = rng.uniform(50, 200, n)
 
-        df = pd.DataFrame({
-            "timestamp": timestamps, "open": o, "high": h, "low": l, "close": close, "volume": v,
-        })
+        df = pd.DataFrame(
+            {
+                "timestamp": timestamps,
+                "open": o,
+                "high": h,
+                "low": l,
+                "close": close,
+                "volume": v,
+            }
+        )
 
         # Build pipeline
         config_fe = {"features": {"max_window_bars": 500, "min_bars_required": 50}}
@@ -291,8 +358,15 @@ class TestEnsembleIntegration:
             "strategies": {
                 "mtf_macd_elder": {
                     "macd": {"fast": 12, "slow": 26, "signal": 9},
-                    "exit": {"trailing_stop_pct": 0.03, "atr_stop_mult": 2.0, "min_hold_bars": 1},
-                    "elder_filter": {"require_volume_confirm": False, "allow_shorts": True},
+                    "exit": {
+                        "trailing_stop_pct": 0.03,
+                        "atr_stop_mult": 2.0,
+                        "min_hold_bars": 1,
+                    },
+                    "elder_filter": {
+                        "require_volume_confirm": False,
+                        "allow_shorts": True,
+                    },
                 },
                 "mean_reversion": {
                     "rsi": {"period": 14, "oversold": 30, "overbought": 70},
@@ -301,9 +375,17 @@ class TestEnsembleIntegration:
                 },
             },
             "regime": {
-                "trending": {"adx_min": 25, "di_ratio_strong": 1.3, "di_ratio_reverse": 0.77},
+                "trending": {
+                    "adx_min": 25,
+                    "di_ratio_strong": 1.3,
+                    "di_ratio_reverse": 0.77,
+                },
                 "ranging": {"adx_max": 20, "bb_width_max": 0.04, "vol_max": 0.50},
-                "volatile": {"atr_mult": 2.0, "vol_absolute": 1.0, "bb_width_min": 0.08},
+                "volatile": {
+                    "atr_mult": 2.0,
+                    "vol_absolute": 1.0,
+                    "bb_width_min": 0.08,
+                },
                 "hysteresis_bars": 2,
                 "lookback_bars": 100,
             },
@@ -325,7 +407,11 @@ class TestEnsembleIntegration:
             feats_raw = features_df.iloc[i].to_dict()
 
             # Add atr_14 to candle for trailing stop
-            candle = {"close": row["close"], "open": row["open"], "atr_14": feats_raw.get("atr_14", 0)}
+            candle = {
+                "close": row["close"],
+                "open": row["open"],
+                "atr_14": feats_raw.get("atr_14", 0),
+            }
 
             signal = router.get_signal(candle, feats_raw)
             signals.append(signal.value)

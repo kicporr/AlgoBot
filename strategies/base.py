@@ -14,25 +14,25 @@ class Signal(Enum):
 
 class BaseStrategy(ABC):
     """All strategies must implement this interface."""
-    
+
     def __init__(self, config: dict):
         self.config = config
-    
+
     @abstractmethod
     def on_candle(self, candle: dict, features: dict) -> Signal:
         """Called every primary timeframe candle close. Returns trading signal."""
         ...
-    
+
     @property
     @abstractmethod
     def name(self) -> str:
         """Human-readable strategy name."""
         ...
-    
+
     def on_higher_tf_candle(self, candle: dict, timeframe: str):
         """Optional: called when a higher-timeframe candle closes."""
         pass
-    
+
     def on_position_closed(self):
         """Optional: called by orchestrator when a position is closed externally (PositionTracker, manual, etc.).
 

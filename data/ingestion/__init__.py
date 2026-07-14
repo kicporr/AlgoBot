@@ -12,6 +12,7 @@ from .resampler import OHLCVResampler, Timeframe, CandleBuilder
 # REST client — requires ccxt
 try:
     from .rest_client import BitgetRESTClient
+
     _HAS_REST = True
 except ImportError:
     _HAS_REST = False
@@ -20,6 +21,7 @@ except ImportError:
 # WebSocket client — requires websocket-client
 try:
     from .ws_client import BitgetWSClient, WSState
+
     _HAS_WS = True
 except ImportError:
     _HAS_WS = False
@@ -36,8 +38,14 @@ def has_rest() -> bool:
 
 
 __all__ = [
-    "DataValidator", "ValidationResult",
-    "OHLCVResampler", "Timeframe", "CandleBuilder",
-    "BitgetRESTClient", "BitgetWSClient", "WSState",
-    "has_websocket", "has_rest",
+    "DataValidator",
+    "ValidationResult",
+    "OHLCVResampler",
+    "Timeframe",
+    "CandleBuilder",
+    "BitgetRESTClient",
+    "BitgetWSClient",
+    "WSState",
+    "has_websocket",
+    "has_rest",
 ]

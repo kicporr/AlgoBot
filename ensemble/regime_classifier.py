@@ -39,20 +39,22 @@ class RegimeClassifier:
         # Trending thresholds
         trend_cfg = rc_cfg.get("trending", {})
         self.adx_trend_min = trend_cfg.get("adx_min", 25)
-        self.di_ratio_strong = trend_cfg.get("di_ratio_strong", 1.3)   # DI+ / DI- > 1.3
-        self.di_ratio_reverse = trend_cfg.get("di_ratio_reverse", 0.77) # DI+ / DI- < 0.77
+        self.di_ratio_strong = trend_cfg.get("di_ratio_strong", 1.3)  # DI+ / DI- > 1.3
+        self.di_ratio_reverse = trend_cfg.get(
+            "di_ratio_reverse", 0.77
+        )  # DI+ / DI- < 0.77
 
         # Ranging thresholds
         range_cfg = rc_cfg.get("ranging", {})
         self.adx_range_max = range_cfg.get("adx_max", 20)
-        self.bb_width_max = range_cfg.get("bb_width_max", 0.04)       # BB width < 4%
-        self.vol_range_max = range_cfg.get("vol_max", 0.50)           # HV < 50%
+        self.bb_width_max = range_cfg.get("bb_width_max", 0.04)  # BB width < 4%
+        self.vol_range_max = range_cfg.get("vol_max", 0.50)  # HV < 50%
 
         # Volatile thresholds
         vol_cfg = rc_cfg.get("volatile", {})
-        self.atr_mult = vol_cfg.get("atr_mult", 2.0)                  # ATR > 2× avg
-        self.vol_absolute = vol_cfg.get("vol_absolute", 1.0)          # HV > 100%
-        self.bb_width_vol = vol_cfg.get("bb_width_min", 0.08)         # BB > 8%
+        self.atr_mult = vol_cfg.get("atr_mult", 2.0)  # ATR > 2× avg
+        self.vol_absolute = vol_cfg.get("vol_absolute", 1.0)  # HV > 100%
+        self.bb_width_vol = vol_cfg.get("bb_width_min", 0.08)  # BB > 8%
 
         # General
         self.hysteresis_bars = rc_cfg.get("hysteresis_bars", 2)
@@ -88,14 +90,20 @@ class RegimeClassifier:
         gk = features.get("garman_klass", 0.0)
         price = features.get("price", 0.0)
         dist_sma50 = features.get("dist_sma_50", 0.0)
-        trend_r2 = features.get("trend_strength", 0.0) if "trend_strength" in features else 0.5
+        trend_r2 = (
+            features.get("trend_strength", 0.0) if "trend_strength" in features else 0.5
+        )
 
         # Update rolling stats
         self._atr_samples.append(atr)
         if len(self._atr_samples) > self.lookback:
-            self._atr_samples = self._atr_samples[-self.lookback:]
+            self._atr_samples = self._atr_samples[-self.lookback :]
 
-        avg_atr = sum(self._atr_samples) / len(self._atr_samples) if self._atr_samples else atr
+        avg_atr = (
+            sum(self._atr_samples) / len(self._atr_samples)
+            if self._atr_samples
+            else atr
+        )
 
         # ── Rule 1: VOLATILE — check first (risk priority) ────
         vol_signals = 0
@@ -131,7 +139,7 @@ class RegimeClassifier:
         """Only switch regime if N consecutive bars agree."""
         self._regime_votes.append(new_regime)
         if len(self._regime_votes) > self.hysteresis_bars:
-            self._regime_votes = self._regime_votes[-self.hysteresis_bars:]
+            self._regime_votes = self._regime_votes[-self.hysteresis_bars :]
 
         # If all votes agree on new regime, switch
         if len(self._regime_votes) == self.hysteresis_bars:
@@ -152,9 +160,9 @@ class RegimeClassifier:
             "regime": self.current_regime.value,
             "bar_count": self._bar_count,
             "hysteresis": [r.value for r in self._regime_votes],
-            "avg_atr": round(
-                sum(self._atr_samples) / len(self._atr_samples), 1
-            ) if self._atr_samples else 0.0,
+            "avg_atr": round(sum(self._atr_samples) / len(self._atr_samples), 1)
+            if self._atr_samples
+            else 0.0,
         }
 
     def reset(self):

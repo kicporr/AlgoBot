@@ -48,7 +48,9 @@ class DerivedFeatures:
     # ─── Pattern Detection ─────────────────────────────────────
 
     @staticmethod
-    def detect_patterns(o: pd.Series, h: pd.Series, l: pd.Series, c: pd.Series) -> dict[str, pd.Series]:
+    def detect_patterns(
+        o: pd.Series, h: pd.Series, l: pd.Series, c: pd.Series
+    ) -> dict[str, pd.Series]:
         """Detect all candlestick patterns. Returns dict of {name: Series of 0/1}."""
         body = DerivedFeatures._body(o, c)
         us = DerivedFeatures._upper_shadow(o, h, c)
@@ -68,11 +70,11 @@ class DerivedFeatures:
         patterns["doji_long_legged"] = ll_doji.astype(int)
 
         # 3. Hammer — bullish reversal: small body at top, long lower shadow
-        hammer = (bull & (ls > body * 2) & (us < body * 0.5) & (tr > 0))
+        hammer = bull & (ls > body * 2) & (us < body * 0.5) & (tr > 0)
         patterns["hammer"] = hammer.astype(int)
 
         # 4. Shooting Star — bearish reversal: small body at bottom, long upper shadow
-        shooting_star = (bear & (us > body * 2) & (ls < body * 0.5) & (tr > 0))
+        shooting_star = bear & (us > body * 2) & (ls < body * 0.5) & (tr > 0)
         patterns["shooting_star"] = shooting_star.astype(int)
 
         # 5. Bullish Engulfing
@@ -80,18 +82,22 @@ class DerivedFeatures:
         prev_o = o.shift(1)
         prev_c = c.shift(1)
         bull_engulf = (
-            bull & prev_bear &
-            (o < prev_c) & (c > prev_o) &
-            (body > DerivedFeatures._body(prev_o, prev_c))
+            bull
+            & prev_bear
+            & (o < prev_c)
+            & (c > prev_o)
+            & (body > DerivedFeatures._body(prev_o, prev_c))
         )
         patterns["bullish_engulfing"] = bull_engulf.astype(int)
 
         # 6. Bearish Engulfing
         prev_bull = bull.shift(1)
         bear_engulf = (
-            bear & prev_bull &
-            (o > prev_c) & (c < prev_o) &
-            (body > DerivedFeatures._body(prev_o, prev_c))
+            bear
+            & prev_bull
+            & (o > prev_c)
+            & (c < prev_o)
+            & (body > DerivedFeatures._body(prev_o, prev_c))
         )
         patterns["bearish_engulfing"] = bear_engulf.astype(int)
 
@@ -102,8 +108,10 @@ class DerivedFeatures:
 
         # 8. Morning Star — 3-bar bullish reversal pattern
         # Bar1: strong bearish, Bar2: small body (doji), Bar3: strong bullish
-        bar1_bearish = bear.shift(2) & (DerivedFeatures._body(o.shift(2), c.shift(2)) > tr.shift(2).median())
-        bar2_small = (body.shift(1) < tr.shift(1) * 0.3)
+        bar1_bearish = bear.shift(2) & (
+            DerivedFeatures._body(o.shift(2), c.shift(2)) > tr.shift(2).median()
+        )
+        bar2_small = body.shift(1) < tr.shift(1) * 0.3
         gap_down = o.shift(1) < c.shift(2)  # Bar2 opens below Bar1 close
         bar3_bullish = bull & (body > tr.median())
         gap_up = o > c.shift(1)  # Bar3 opens above Bar2 close
@@ -111,7 +119,9 @@ class DerivedFeatures:
         patterns["morning_star"] = morning_star.astype(int)
 
         # 9. Evening Star — 3-bar bearish reversal pattern
-        bar1_bullish = bull.shift(2) & (DerivedFeatures._body(o.shift(2), c.shift(2)) > tr.shift(2).median())
+        bar1_bullish = bull.shift(2) & (
+            DerivedFeatures._body(o.shift(2), c.shift(2)) > tr.shift(2).median()
+        )
         gap_up2 = o.shift(1) > c.shift(2)
         bar3_bearish = bear & (body > tr.median())
         gap_down2 = o < c.shift(1)
@@ -120,13 +130,25 @@ class DerivedFeatures:
 
         # 10. Three White Soldiers — 3 consecutive strong bullish candles
         soldiers_1 = bull.shift(2) & (body.shift(2) > tr.shift(2).median())
-        soldiers_2 = bull.shift(1) & (body.shift(1) > tr.shift(1).median()) & (c.shift(1) > c.shift(2)) & (o.shift(1) > o.shift(2))
+        soldiers_2 = (
+            bull.shift(1)
+            & (body.shift(1) > tr.shift(1).median())
+            & (c.shift(1) > c.shift(2))
+            & (o.shift(1) > o.shift(2))
+        )
         soldiers_3 = bull & (body > tr.median()) & (c > c.shift(1)) & (o > o.shift(1))
-        patterns["three_white_soldiers"] = (soldiers_1 & soldiers_2 & soldiers_3).astype(int)
+        patterns["three_white_soldiers"] = (
+            soldiers_1 & soldiers_2 & soldiers_3
+        ).astype(int)
 
         # 11. Three Black Crows — 3 consecutive strong bearish candles
         crows_1 = bear.shift(2) & (body.shift(2) > tr.shift(2).median())
-        crows_2 = bear.shift(1) & (body.shift(1) > tr.shift(1).median()) & (c.shift(1) < c.shift(2)) & (o.shift(1) < o.shift(2))
+        crows_2 = (
+            bear.shift(1)
+            & (body.shift(1) > tr.shift(1).median())
+            & (c.shift(1) < c.shift(2))
+            & (o.shift(1) < o.shift(2))
+        )
         crows_3 = bear & (body > tr.median()) & (c < c.shift(1)) & (o < o.shift(1))
         patterns["three_black_crows"] = (crows_1 & crows_2 & crows_3).astype(int)
 
@@ -139,7 +161,9 @@ class DerivedFeatures:
     # ─── RSI Divergence ────────────────────────────────────────
 
     @staticmethod
-    def rsi_divergence(close: pd.Series, rsi: pd.Series, lookback: int = 5) -> pd.Series:
+    def rsi_divergence(
+        close: pd.Series, rsi: pd.Series, lookback: int = 5
+    ) -> pd.Series:
         """Detect RSI divergence.
 
         Bullish divergence: price makes lower low, RSI makes higher low.
@@ -179,6 +203,7 @@ class DerivedFeatures:
 
         Returns values 0..1 where 1 = perfect linear trend.
         """
+
         def r_squared(x):
             if len(x) < period:
                 return np.nan
@@ -198,7 +223,9 @@ class DerivedFeatures:
     # ─── Support / Resistance Proximity ────────────────────────
 
     @staticmethod
-    def pivot_levels(high: pd.Series, low: pd.Series, window: int = 5) -> tuple[pd.Series, pd.Series]:
+    def pivot_levels(
+        high: pd.Series, low: pd.Series, window: int = 5
+    ) -> tuple[pd.Series, pd.Series]:
         """Find pivot highs and lows (local extrema).
 
         Returns (pivot_highs, pivot_lows) — price level at each pivot point,
@@ -231,9 +258,9 @@ class DerivedFeatures:
         prev_l = l.shift(1)
 
         gap = pd.Series(0, index=o.index)
-        gap[l > prev_h] = 2      # Full gap up
-        gap[h < prev_l] = -2     # Full gap down
-        gap[(o > prev_h) & (l <= prev_h)] = 1    # Partial gap up
-        gap[(o < prev_l) & (h >= prev_l)] = -1   # Partial gap down
+        gap[l > prev_h] = 2  # Full gap up
+        gap[h < prev_l] = -2  # Full gap down
+        gap[(o > prev_h) & (l <= prev_h)] = 1  # Partial gap up
+        gap[(o < prev_l) & (h >= prev_l)] = -1  # Partial gap down
 
         return gap

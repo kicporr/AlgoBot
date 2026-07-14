@@ -35,10 +35,28 @@ class XGBoostCostAware(BaseStrategy):
     """
 
     # Features excluded from ML training (patterns, distance-based, raw price)
-    _EXCLUDE_PREFIXES = ("pattern_", "dist_sma_", "dist_high_", "dist_low_",
-                         "return_5", "return_10", "return_20", "vs_4h_", "vs_1d_")
-    _EXCLUDE_COLUMNS = {"price", "high_20", "low_20", "close_position",
-                        "hl_ratio", "oc_ratio", "hl_range", "gap", "trend_strength"}
+    _EXCLUDE_PREFIXES = (
+        "pattern_",
+        "dist_sma_",
+        "dist_high_",
+        "dist_low_",
+        "return_5",
+        "return_10",
+        "return_20",
+        "vs_4h_",
+        "vs_1d_",
+    )
+    _EXCLUDE_COLUMNS = {
+        "price",
+        "high_20",
+        "low_20",
+        "close_position",
+        "hl_ratio",
+        "oc_ratio",
+        "hl_range",
+        "gap",
+        "trend_strength",
+    }
 
     def __init__(self, config: dict):
         super().__init__(config)
@@ -91,7 +109,10 @@ class XGBoostCostAware(BaseStrategy):
 
         # WalkForwardTrainer — used for target building and prediction (not training directly)
         from ml.trainer import WalkForwardTrainer
-        trainer_cfg = {"strategies": {"xgboost_cost_aware": {"model_params": self.model_params}}}
+
+        trainer_cfg = {
+            "strategies": {"xgboost_cost_aware": {"model_params": self.model_params}}
+        }
         self.trainer = WalkForwardTrainer(trainer_cfg)
 
         logger.info(
@@ -129,7 +150,9 @@ class XGBoostCostAware(BaseStrategy):
         forward return, filters noise via dead zone, trains classifier.
         """
         if "close" not in historical_data.columns:
-            logger.warning("XGBoostCostAware.retrain: 'close' column missing — skipping")
+            logger.warning(
+                "XGBoostCostAware.retrain: 'close' column missing — skipping"
+            )
             return
 
         df = historical_data.copy()
@@ -153,7 +176,9 @@ class XGBoostCostAware(BaseStrategy):
         avail_cols = [c for c in df.columns if c not in ("timestamp", "close")]
         feature_cols = self._get_feature_columns(avail_cols)
         if not feature_cols:
-            logger.warning("XGBoostCostAware.retrain: no usable feature columns — skipping")
+            logger.warning(
+                "XGBoostCostAware.retrain: no usable feature columns — skipping"
+            )
             return
         X = df.loc[mask_keep, feature_cols].copy()
 
@@ -178,7 +203,8 @@ class XGBoostCostAware(BaseStrategy):
         # 6. Train model with early stopping
         try:
             self.model = self.trainer.train(
-                X_train, y_train,
+                X_train,
+                y_train,
                 X_val=X_val if len(X_val) > 10 else None,
                 y_val=y_val if len(y_val) > 10 else None,
             )
@@ -234,7 +260,9 @@ class XGBoostCostAware(BaseStrategy):
             return Signal.FLAT
 
         # Convert features to dict for prediction
-        feats_dict = features.to_dict() if hasattr(features, "to_dict") else dict(features)
+        feats_dict = (
+            features.to_dict() if hasattr(features, "to_dict") else dict(features)
+        )
 
         prob = self._predict(feats_dict)
         self._last_forecast = prob
@@ -250,12 +278,18 @@ class XGBoostCostAware(BaseStrategy):
         ema_slope = feats_dict.get("ema_20_slope", 0.0)
 
         if long_ok and ema_slope > 0:
-            if getattr(self, "in_position", False) and getattr(self, "position_side", "") == "short":
+            if (
+                getattr(self, "in_position", False)
+                and getattr(self, "position_side", "") == "short"
+            ):
                 return Signal.LONG  # Exit short + enter long
             return Signal.LONG
 
         if short_ok and self.allow_shorts and ema_slope < 0:
-            if getattr(self, "in_position", False) and getattr(self, "position_side", "") == "long":
+            if (
+                getattr(self, "in_position", False)
+                and getattr(self, "position_side", "") == "long"
+            ):
                 return Signal.SHORT  # Exit long + enter short
             return Signal.SHORT
 

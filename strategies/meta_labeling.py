@@ -41,9 +41,13 @@ class MetaLabeler:
     def __init__(self, config: dict):
         ml_cfg = config.get("meta_labeling", {})
         self.enabled = ml_cfg.get("enabled", True)
-        self.min_confidence = ml_cfg.get("min_confidence", 0.58)  # Production: 0.58 (conservative)
+        self.min_confidence = ml_cfg.get(
+            "min_confidence", 0.58
+        )  # Production: 0.58 (conservative)
         self.training_samples = ml_cfg.get("training_samples", 1000)
-        self.max_features = ml_cfg.get("max_features", 30)  # Top-N features only (0 = all)
+        self.max_features = ml_cfg.get(
+            "max_features", 30
+        )  # Top-N features only (0 = all)
 
         # Model state
         self.model = None
@@ -137,7 +141,9 @@ class MetaLabeler:
             y_rows.append(1.0 if t.get("pnl", 0.0) > 0 else 0.0)
 
         if len(X_rows) < 50:
-            logger.warning(f"MetaLabeler.train: only {len(X_rows)} valid samples (< 50) -- skipping")
+            logger.warning(
+                f"MetaLabeler.train: only {len(X_rows)} valid samples (< 50) -- skipping"
+            )
             return False
 
         X = pd.DataFrame(X_rows)
@@ -149,18 +155,31 @@ class MetaLabeler:
         X = X.loc[y.index]
 
         # 3. Feature selection (if max_features is set and we have more features)
-        if self.max_features and self.max_features > 0 and len(X.columns) > self.max_features:
+        if (
+            self.max_features
+            and self.max_features > 0
+            and len(X.columns) > self.max_features
+        ):
             # Quick model to get feature importance
             import xgboost as xgb
+
             quick_model = xgb.XGBClassifier(
-                n_estimators=50, max_depth=3, learning_rate=0.05,
-                reg_alpha=1.0, reg_lambda=2.0, random_state=42
+                n_estimators=50,
+                max_depth=3,
+                learning_rate=0.05,
+                reg_alpha=1.0,
+                reg_lambda=2.0,
+                random_state=42,
             )
-            quick_model.fit(X.iloc[:-max(10, len(X)//5)], y.iloc[:-max(10, len(X)//5)])
+            quick_model.fit(
+                X.iloc[: -max(10, len(X) // 5)], y.iloc[: -max(10, len(X) // 5)]
+            )
             imp = quick_model.get_booster().get_score(importance_type="gain")
-            top_features = sorted(imp, key=imp.get, reverse=True)[:self.max_features]
+            top_features = sorted(imp, key=imp.get, reverse=True)[: self.max_features]
             X = X[top_features]
-            logger.info(f"Feature selection: kept top {len(top_features)}/{len(imp)} features")
+            logger.info(
+                f"Feature selection: kept top {len(top_features)}/{len(imp)} features"
+            )
 
         # 4. Chronological split (80/20) for early stopping
         n_val = max(10, int(len(X) * 0.2))
@@ -212,15 +231,22 @@ class MetaLabeler:
     def _load_pretrained(self):
         """Load pre-trained model from models/meta_labeler_production.pkl if available."""
         import os, pickle
-        model_path = os.path.join(os.path.dirname(__file__), "..", "models", "meta_labeler_production.pkl")
+
+        model_path = os.path.join(
+            os.path.dirname(__file__), "..", "models", "meta_labeler_production.pkl"
+        )
         if not os.path.exists(model_path):
-            logger.info("No pre-trained MetaLabeler model found — will train from live data")
+            logger.info(
+                "No pre-trained MetaLabeler model found — will train from live data"
+            )
             return
         try:
             with open(model_path, "rb") as f:
                 data = pickle.load(f)
             if data is None or not isinstance(data, dict):
-                logger.warning(f"Pre-trained model file exists but contains unexpected data (type={type(data).__name__})")
+                logger.warning(
+                    f"Pre-trained model file exists but contains unexpected data (type={type(data).__name__})"
+                )
                 return
             self.model = data["model"]
             self._feature_names = data["feature_names"]
@@ -237,7 +263,9 @@ class MetaLabeler:
                 f"trained={data.get('trained_at', 'unknown')}"
             )
         except Exception as e:
-            logger.warning(f"Failed to load pre-trained MetaLabeler: {e} — will train from live data")
+            logger.warning(
+                f"Failed to load pre-trained MetaLabeler: {e} — will train from live data"
+            )
 
     def _predict(self, features: dict, signal=None) -> float:
         """Predict probability that a signal will be profitable.
@@ -256,7 +284,7 @@ class MetaLabeler:
             row = {k: features.get(k, 0.0) for k in self._feature_names}
 
             # Inject signal-type features (must match training data)
-            if signal is not None and hasattr(signal, 'name'):
+            if signal is not None and hasattr(signal, "name"):
                 row["signal_is_long"] = 1.0 if signal.name == "LONG" else 0.0
                 row["signal_is_short"] = 1.0 if signal.name == "SHORT" else 0.0
 
@@ -286,21 +314,24 @@ class MetaLabeler:
             approved: True if the signal passed the meta-labeler filter.
             was_profitable: True if the trade (or would-be trade) was profitable.
         """
-        if not hasattr(self, '_outcome_log'):
+        if not hasattr(self, "_outcome_log"):
             self._outcome_log: list[dict] = []
         import time
-        self._outcome_log.append({
-            "ts": int(time.time()),
-            "approved": approved,
-            "win": was_profitable,
-        })
+
+        self._outcome_log.append(
+            {
+                "ts": int(time.time()),
+                "approved": approved,
+                "win": was_profitable,
+            }
+        )
         # Keep last 500 outcomes
         if len(self._outcome_log) > 500:
             self._outcome_log = self._outcome_log[-500:]
 
     def rolling_wr(self, n: int = 50) -> float:
         """Win rate of last N accepted trades (None if insufficient data)."""
-        if not hasattr(self, '_outcome_log'):
+        if not hasattr(self, "_outcome_log"):
             return None
         accepted = [e for e in self._outcome_log if e["approved"]]
         if len(accepted) < n:
@@ -310,13 +341,15 @@ class MetaLabeler:
 
     def monthly_sharpe(self) -> float:
         """Approximate monthly Sharpe of accepted trades (None if insufficient data)."""
-        if not hasattr(self, '_outcome_log'):
+        if not hasattr(self, "_outcome_log"):
             return None
         import time
+
         now = int(time.time())
         month_ago = now - 30 * 86400
-        month_trades = [e for e in self._outcome_log
-                        if e["approved"] and e["ts"] >= month_ago]
+        month_trades = [
+            e for e in self._outcome_log if e["approved"] and e["ts"] >= month_ago
+        ]
         if len(month_trades) < 5:
             return None
         wins = sum(1 for e in month_trades if e["win"])
@@ -339,25 +372,36 @@ class MetaLabeler:
             alerts.append(f"MONTHLY_SHARPE_LOW: monthly Sharpe={ms:.2f} < 2.0")
 
         # Check 2 consecutive months
-        if hasattr(self, '_outcome_log') and len(self._outcome_log) >= 100:
+        if hasattr(self, "_outcome_log") and len(self._outcome_log) >= 100:
             import time
+
             now = int(time.time())
-            m1_trades = [e for e in self._outcome_log
-                         if e["approved"] and now - 60*86400 <= e["ts"] < now - 30*86400]
-            m2_trades = [e for e in self._outcome_log
-                         if e["approved"] and e["ts"] >= now - 30*86400]
+            m1_trades = [
+                e
+                for e in self._outcome_log
+                if e["approved"] and now - 60 * 86400 <= e["ts"] < now - 30 * 86400
+            ]
+            m2_trades = [
+                e
+                for e in self._outcome_log
+                if e["approved"] and e["ts"] >= now - 30 * 86400
+            ]
             if len(m1_trades) >= 5 and len(m2_trades) >= 5:
                 wr1 = sum(1 for e in m1_trades if e["win"]) / len(m1_trades)
                 wr2 = sum(1 for e in m2_trades if e["win"]) / len(m2_trades)
+
                 # Approximate Sharpe
                 def approx_sharpe(wr, n):
                     if wr <= 0 or wr >= 1 or n < 2:
                         return 0
-                    return (wr - 0.5) / (wr * (1 - wr)) ** 0.5 * (n ** 0.5) / 2
+                    return (wr - 0.5) / (wr * (1 - wr)) ** 0.5 * (n**0.5) / 2
+
                 s1 = approx_sharpe(wr1, len(m1_trades))
                 s2 = approx_sharpe(wr2, len(m2_trades))
                 if s1 < 2.0 and s2 < 2.0:
-                    alerts.append(f"CONSECUTIVE_MONTHLY_SHARPE_LOW: {s1:.1f}/{s2:.1f} < 2.0 for 2 months")
+                    alerts.append(
+                        f"CONSECUTIVE_MONTHLY_SHARPE_LOW: {s1:.1f}/{s2:.1f} < 2.0 for 2 months"
+                    )
 
         return alerts
 

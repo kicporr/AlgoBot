@@ -1,4 +1,5 @@
 """Quick Bitget API connection test"""
+
 import sys, os
 from pathlib import Path
 from dotenv import load_dotenv
@@ -22,21 +23,27 @@ if not all([api_key, secret, passphrase]):
     sys.exit(1)
 
 import ccxt
+
 print("\nConnecting to Bitget...")
 
-ex = ccxt.bitget({
-    "apiKey": api_key,
-    "secret": secret,
-    "password": passphrase,
-    "enableRateLimit": True,
-    "options": {"defaultType": "spot"},
-})
+ex = ccxt.bitget(
+    {
+        "apiKey": api_key,
+        "secret": secret,
+        "password": passphrase,
+        "enableRateLimit": True,
+        "options": {"defaultType": "spot"},
+    }
+)
 
 # Test 1: Server time
 try:
     server_time = ex.fetch_time()
     from datetime import datetime, timezone
-    print(f"[OK] Server time: {datetime.fromtimestamp(server_time/1000, tz=timezone.utc)}")
+
+    print(
+        f"[OK] Server time: {datetime.fromtimestamp(server_time / 1000, tz=timezone.utc)}"
+    )
 except Exception as e:
     print(f"[FAIL] Server time: {e}")
 

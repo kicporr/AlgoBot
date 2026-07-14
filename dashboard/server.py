@@ -128,6 +128,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 logger.error(f"Error saving settings: {e}")
                 self.send_error(400, f"Invalid request payload: {e}")
+        elif self.path == "/api/demo/seed":
+            self._seed_demo()
         else:
             self.send_error(404, "Endpoint Not Found")
 
@@ -1672,6 +1674,73 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.wfile.write(body.encode("utf-8"))
         except Exception:
             self.send_error(500)
+
+    def _seed_demo(self):
+        """POST /api/demo/seed — inject demo open positions for UI preview."""
+        if not self.bot:
+            self._send_json({"status": "error", "message": "Bot not running"})
+            return
+        import time
+
+        now = int(time.time() * 1000)
+        prices = {
+            "BTC/USDT:USDT": 67500,
+            "ETH/USDT:USDT": 3420,
+            "XRP/USDT:USDT": 0.62,
+            "SOL/USDT:USDT": 142,
+            "LTC/USDT:USDT": 83,
+        }
+        demo = [
+            ("BTC/USDT:USDT", "long", 0.12, 66500, prices["BTC/USDT:USDT"]),
+            ("ETH/USDT:USDT", "short", 1.5, 3480, prices["ETH/USDT:USDT"]),
+            ("SOL/USDT:USDT", "long", 8.0, 138, prices["SOL/USDT:USDT"]),
+            ("XRP/USDT:USDT", "long", 5000, 0.60, prices["XRP/USDT:USDT"]),
+        ]
+
+        count = 0
+        for sym, side, size, entry, mark in demo:
+            for p in self.bot.pipelines.values():
+                state = p.symbol_states.get(sym)
+                if not state:
+                    continue
+                state["open_positions"][side] = {
+                    "entry_price": entry,
+                    "size": size,
+                    "ts": now - 3600000,
+                    "side": side,
+                    "highest": max(entry, mark) if side == "long" else entry,
+                    "lowest": min(entry, mark) if side == "short" else entry,
+                    "symbol": sym,
+                    "theoretical_entry_price": entry,
+                }
+                # Update position tracker
+                tracker = state.get("position_tracker")
+                if tracker and hasattr(tracker, "enter"):
+                    tracker.enter(
+                        side=side,
+                        entry_price=entry,
+                        quantity=size,
+                        atr=entry * 0.01,
+                        atr_pct=1.0,
+                        timestamp=now,
+                        symbol=sym,
+                    )
+                # Update latest features for mark price
+                lf = state.get("latest_features", {})
+                if not lf:
+                    lf = {"close": mark, "price": mark, "atr_14": entry * 0.01}
+                else:
+                    lf["close"] = mark
+                    lf["price"] = mark
+                state["latest_features"] = lf
+                count += 1
+
+        self._send_json(
+            {
+                "status": "ok",
+                "message": f"Seeded {count} demo positions across pipelines",
+            }
+        )
 
 
 class ThreadingHTTPServer(ThreadingTCPServer):

@@ -1,6 +1,7 @@
 """Tests for Phase 4: Risk Layer Integration."""
 
 import sys, os
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
@@ -13,9 +14,9 @@ import pandas as pd
 
 
 class TestKellyPositionSizer:
-
     def _make_sizer(self, overrides=None):
         from risk.position_sizer import KellyPositionSizer
+
         config = {
             "risk": {
                 "position_sizing": {
@@ -60,11 +61,17 @@ class TestKellyPositionSizer:
 
     def test_volatility_adjustment_reduces_size(self):
         from risk.position_sizer import KellyPositionSizer
+
         config = {
             "risk": {
                 "position_sizing": {
-                    "kelly": {"default_win_rate": 0.5, "default_avg_win_pct": 3.0,
-                              "default_avg_loss_pct": 2.0, "fraction": 0.5, "max_kelly_pct": 0.25},
+                    "kelly": {
+                        "default_win_rate": 0.5,
+                        "default_avg_win_pct": 3.0,
+                        "default_avg_loss_pct": 2.0,
+                        "fraction": 0.5,
+                        "max_kelly_pct": 0.25,
+                    },
                     "max_risk_per_trade_pct": 5.0,
                     "max_position_size_btc": 0.5,
                     "max_total_exposure_pct": 50,
@@ -97,6 +104,7 @@ class TestKellyPositionSizer:
 
     def test_fixed_fraction_streak_sizing(self):
         from risk.position_sizer import KellyPositionSizer
+
         config = {
             "risk": {
                 "max_position_pct": 0.20,
@@ -107,35 +115,40 @@ class TestKellyPositionSizer:
                     "max_total_exposure_pct": 50,
                     "min_position_size_btc": 0.0001,
                     "volatility": {"enabled": False, "window": 50},
-                }
+                },
             }
         }
         sizer = KellyPositionSizer(config)
 
         # Baseline: no losses, no wins
-        size_base = sizer.calculate(capital=10000, btc_price=50000, consecutive_losses=0, consecutive_wins=0)
+        size_base = sizer.calculate(
+            capital=10000, btc_price=50000, consecutive_losses=0, consecutive_wins=0
+        )
         # Expected: 20% of 10000 = 2000 USDT -> 2000 / 50000 = 0.04 BTC
         assert abs(size_base - 0.04) < 1e-6
 
         # After 2 losses: should be halved (10%)
-        size_losses = sizer.calculate(capital=10000, btc_price=50000, consecutive_losses=2, consecutive_wins=0)
+        size_losses = sizer.calculate(
+            capital=10000, btc_price=50000, consecutive_losses=2, consecutive_wins=0
+        )
         # Expected: 10% of 10000 = 1000 USDT -> 1000 / 50000 = 0.02 BTC
         assert abs(size_losses - 0.02) < 1e-6
 
         # After 3 wins: should be scaled 1.5x (30%)
-        size_wins = sizer.calculate(capital=10000, btc_price=50000, consecutive_losses=0, consecutive_wins=3)
+        size_wins = sizer.calculate(
+            capital=10000, btc_price=50000, consecutive_losses=0, consecutive_wins=3
+        )
         # Expected: 30% of 10000 = 3000 USDT -> 3000 / 50000 = 0.06 BTC
         assert abs(size_wins - 0.06) < 1e-6
-
 
 
 # ─── CircuitBreaker ───────────────────────────────────────────
 
 
 class TestCircuitBreaker:
-
     def _make_breaker(self, overrides=None):
         from risk.circuit_breaker import CircuitBreaker
+
         config = {
             "risk": {
                 "circuit_breaker": {
@@ -155,6 +168,7 @@ class TestCircuitBreaker:
 
     def test_normal_state(self):
         from risk.circuit_breaker import BreakerState
+
         cb = self._make_breaker()
         state, reason = cb.check(equity=10000, balance=10000, recent_trades_pnl=[])
         assert state == BreakerState.NORMAL
@@ -162,57 +176,70 @@ class TestCircuitBreaker:
 
     def test_drawdown_halt(self):
         from risk.circuit_breaker import BreakerState
+
         cb = self._make_breaker()
         cb.peak_equity = 10000
         cb.daily_pnl = 0
         cb.last_reset_day = int(time.time()) // 86400
         state, reason = cb.check(
-            equity=7500, balance=10000, recent_trades_pnl=[], current_atr=100, avg_atr=200
+            equity=7500,
+            balance=10000,
+            recent_trades_pnl=[],
+            current_atr=100,
+            avg_atr=200,
         )
         assert state == BreakerState.HALTED
         assert "drawdown" in reason.lower()
 
     def test_consecutive_loss_warn(self):
         from risk.circuit_breaker import BreakerState
+
         cb = self._make_breaker()
         cb.peak_equity = 10000
         cb.last_reset_day = int(time.time()) // 86400
         state, reason = cb.check(
-            equity=10000, balance=10000, recent_trades_pnl=[-100, -50, -75],
-            current_atr=100, avg_atr=200,
+            equity=10000,
+            balance=10000,
+            recent_trades_pnl=[-100, -50, -75],
+            current_atr=100,
+            avg_atr=200,
         )
         assert state == BreakerState.WARNING
 
     def test_consecutive_loss_halt(self):
         from risk.circuit_breaker import BreakerState
+
         cb = self._make_breaker()
         cb.peak_equity = 10000
         cb.last_reset_day = int(time.time()) // 86400
         state, _ = cb.check(
-            equity=10000, balance=10000,
+            equity=10000,
+            balance=10000,
             recent_trades_pnl=[-100, -50, -75, -200, -150],
         )
         assert state == BreakerState.HALTED
 
     def test_consecutive_loss_requires_manual_reset(self):
         from risk.circuit_breaker import BreakerState
+
         cb = self._make_breaker()
         cb.peak_equity = 10000
         cb.last_reset_day = int(time.time()) // 86400
-        
+
         # Trigger consecutive losses halt
         state, _ = cb.check(
-            equity=10000, balance=10000,
+            equity=10000,
+            balance=10000,
             recent_trades_pnl=[-100, -50, -75, -200, -150],
         )
         assert state == BreakerState.HALTED
         assert cb.manual_halted is True
-        
+
         # Test that reset_daily doesn't clear the halt state
         cb.reset_daily()
         assert cb.manual_halted is True
         assert cb.state == BreakerState.HALTED
-        
+
         # Check that manual reset clears it
         cb.reset_manual_halt()
         assert cb.manual_halted is False
@@ -220,21 +247,24 @@ class TestCircuitBreaker:
 
     def test_emergency_stop_requires_manual_reset(self):
         from risk.circuit_breaker import BreakerState
+
         cb = self._make_breaker()
         cb.emergency_stop("Test panic")
         assert cb.manual_halted is True
-        
+
         # Test that reset_daily doesn't clear it
         cb.reset_daily()
         assert cb.manual_halted is True
         assert cb.state == BreakerState.HALTED
-        
+
         # Test that manual reset clears it
         cb.reset_manual_halt()
         assert cb.manual_halted is False
         assert cb.state == BreakerState.NORMAL
+
     def test_daily_loss_halt(self):
         from risk.circuit_breaker import BreakerState
+
         cb = self._make_breaker()
         cb.peak_equity = 10000
         cb.daily_pnl = -600  # 6% of 10k > 5% limit
@@ -244,19 +274,24 @@ class TestCircuitBreaker:
 
     def test_volatility_spike_halt(self):
         from risk.circuit_breaker import BreakerState
+
         cb = self._make_breaker()
         cb.peak_equity = 10000
         cb.daily_pnl = 0
         cb.weekly_pnl = 0
         state, reason = cb.check(
-            equity=10000, balance=10000, recent_trades_pnl=[],
-            current_atr=600, avg_atr=100,
+            equity=10000,
+            balance=10000,
+            recent_trades_pnl=[],
+            current_atr=600,
+            avg_atr=100,
         )
         assert state == BreakerState.HALTED
         assert "volatility" in reason.lower()
 
     def test_emergency_stop(self):
         from risk.circuit_breaker import BreakerState
+
         cb = self._make_breaker()
         state, reason = cb.emergency_stop("Test panic")
         assert state == BreakerState.HALTED
@@ -264,6 +299,7 @@ class TestCircuitBreaker:
 
     def test_daily_reset(self):
         from risk.circuit_breaker import BreakerState
+
         cb = self._make_breaker()
         cb.daily_pnl = -600
         cb.state = BreakerState.HALTED
@@ -272,10 +308,13 @@ class TestCircuitBreaker:
 
     def test_warning_clears_after_one_bar(self):
         from risk.circuit_breaker import BreakerState
+
         cb = self._make_breaker()
         cb.peak_equity = 10000
         # First bar: warning
-        state1, _ = cb.check(equity=10000, balance=10000, recent_trades_pnl=[-100, -50, -75])
+        state1, _ = cb.check(
+            equity=10000, balance=10000, recent_trades_pnl=[-100, -50, -75]
+        )
         assert state1 == BreakerState.WARNING
         # Second bar: should clear (no new consecutive losses)
         state2, _ = cb.check(equity=10000, balance=10000, recent_trades_pnl=[])
@@ -299,9 +338,9 @@ class TestCircuitBreaker:
 
 
 class TestRiskMonitor:
-
     def _make_monitor(self):
         from risk.risk_monitor import RiskMonitor
+
         config = {
             "risk": {
                 "initial_capital": 10000,
@@ -319,14 +358,20 @@ class TestRiskMonitor:
 
     def test_update_tracks_equity(self):
         rm = self._make_monitor()
-        rm.update(equity=10500, balance=9800, btc_price=50000, position_size=0.05, position_entry=49500)
+        rm.update(
+            equity=10500,
+            balance=9800,
+            btc_price=50000,
+            position_size=0.05,
+            position_entry=49500,
+        )
         assert rm.equity == 10500
         assert rm.position_size_btc == 0.05
 
     def test_drawdown_calculation(self):
         rm = self._make_monitor()
         rm.update(equity=11000, balance=11000)  # New peak
-        rm.update(equity=9900, balance=9900)    # -10%
+        rm.update(equity=9900, balance=9900)  # -10%
         assert rm.current_drawdown_pct > 0.09
         assert rm.max_drawdown_pct >= rm.current_drawdown_pct
 
@@ -356,7 +401,13 @@ class TestRiskMonitor:
 
     def test_snapshot_with_position(self):
         rm = self._make_monitor()
-        rm.update(equity=10000, balance=5000, btc_price=50000, position_size=0.1, position_entry=49000)
+        rm.update(
+            equity=10000,
+            balance=5000,
+            btc_price=50000,
+            position_size=0.1,
+            position_entry=49000,
+        )
         snap = rm.snapshot()
         assert snap["exposure_pct"] > 0
         assert snap["unrealized_pnl"] == pytest.approx(0.1 * (50000 - 49000), rel=0.01)

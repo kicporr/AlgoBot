@@ -21,6 +21,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
+
 load_dotenv(PROJECT_ROOT / "config" / ".env")
 
 from data.ingestion.rest_client import BitgetRESTClient
@@ -38,9 +39,15 @@ def _resample_1h_to_1d(df_1h):
     df = df_1h.copy()
     df["dt"] = pd.to_datetime(df["timestamp"], unit="ms")
     df = df.set_index("dt")
-    daily = df.resample("1D", closed="left", label="left").agg({
-        "open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum",
-    })
+    daily = df.resample("1D", closed="left", label="left").agg(
+        {
+            "open": "first",
+            "high": "max",
+            "low": "min",
+            "close": "last",
+            "volume": "sum",
+        }
+    )
     daily["bar_count"] = df.resample("1D").size()
     daily = daily[daily["bar_count"] >= 12]
     daily = daily.dropna().reset_index()
@@ -81,30 +88,51 @@ def fetch_or_load_data(client, days, since=None):
 def build_config(args):
     return {
         "exchange": {
-            "name": "bitget", "symbols": ["BTC/USDT"],
-            "fees": {"taker": args.taker_fee, "maker": args.maker_fee, "slippage": args.slippage},
+            "name": "bitget",
+            "symbols": ["BTC/USDT"],
+            "fees": {
+                "taker": args.taker_fee,
+                "maker": args.maker_fee,
+                "slippage": args.slippage,
+            },
             "rate_limit": {"max_requests_per_second": 10},
         },
         "risk": {"initial_capital": args.capital, "max_position_pct": 0.95},
         "backtest": {
             "walk_forward_folds": args.folds,
             "min_train_fraction": 0.33,
-            "min_signal_exit_bars": 6
+            "min_signal_exit_bars": 6,
         },
-        "strategies": {"mtf_macd_elder": {
-            "macd": {"fast": 12, "slow": 26, "signal": 9},
-            "exit": {"trailing_stop_pct": args.trailing_stop, "atr_stop_mult": args.atr_stop, "min_hold_bars": 1},
-            "elder_filter": {"require_volume_confirm": args.volume_filter, "volume_mult": 1.2, "allow_shorts": args.shorts},
-        }, "mean_reversion": {
-            "rsi": {"period": 14, "oversold": 30, "overbought": 70},
-            "bollinger": {"period": 20, "std_dev": 2},
-            "require_both_signals": True,
-        }},
+        "strategies": {
+            "mtf_macd_elder": {
+                "macd": {"fast": 12, "slow": 26, "signal": 9},
+                "exit": {
+                    "trailing_stop_pct": args.trailing_stop,
+                    "atr_stop_mult": args.atr_stop,
+                    "min_hold_bars": 1,
+                },
+                "elder_filter": {
+                    "require_volume_confirm": args.volume_filter,
+                    "volume_mult": 1.2,
+                    "allow_shorts": args.shorts,
+                },
+            },
+            "mean_reversion": {
+                "rsi": {"period": 14, "oversold": 30, "overbought": 70},
+                "bollinger": {"period": 20, "std_dev": 2},
+                "require_both_signals": True,
+            },
+        },
         "regime": {
-            "trending": {"adx_min": 25, "di_ratio_strong": 1.3, "di_ratio_reverse": 0.77},
+            "trending": {
+                "adx_min": 25,
+                "di_ratio_strong": 1.3,
+                "di_ratio_reverse": 0.77,
+            },
             "ranging": {"adx_max": 20, "bb_width_max": 0.04, "vol_max": 0.50},
             "volatile": {"atr_mult": 2.0, "vol_absolute": 1.0, "bb_width_min": 0.08},
-            "hysteresis_bars": 2, "lookback_bars": 100,
+            "hysteresis_bars": 2,
+            "lookback_bars": 100,
         },
         "features": {"max_window_bars": 500, "min_bars_required": 50},
     }
@@ -112,8 +140,8 @@ def build_config(args):
 
 def print_results(result, df_1h, args):
     m = result.metrics
-    sd = datetime.fromtimestamp(df_1h["timestamp"].iloc[0]/1000, tz=timezone.utc)
-    ed = datetime.fromtimestamp(df_1h["timestamp"].iloc[-1]/1000, tz=timezone.utc)
+    sd = datetime.fromtimestamp(df_1h["timestamp"].iloc[0] / 1000, tz=timezone.utc)
+    ed = datetime.fromtimestamp(df_1h["timestamp"].iloc[-1] / 1000, tz=timezone.utc)
     days = (ed - sd).days
 
     print()
@@ -122,7 +150,9 @@ def print_results(result, df_1h, args):
     print("=" * 62)
     print(f"  Period:       {sd.date()} -> {ed.date()} ({days:,} days)")
     print(f"  Bars:         {len(df_1h):,} 1H candles")
-    print(f"  Params:       {args.folds}-fold | trail={args.trailing_stop:.0%} | ATR={args.atr_stop}x | shorts={args.shorts}")
+    print(
+        f"  Params:       {args.folds}-fold | trail={args.trailing_stop:.0%} | ATR={args.atr_stop}x | shorts={args.shorts}"
+    )
     print("-" * 62)
     print(f"  TOTAL TRADES:        {m.get('total_trades', 0):>6}")
     print(f"  WIN RATE:            {m.get('win_rate', 0):>6.1f}%")
@@ -218,7 +248,9 @@ def main():
         pd.DataFrame(result.trades).to_csv(args.save_trades, index=False)
         print(f"\n[save] Trades -> {args.save_trades}")
     if args.save_equity and result.equity_curve:
-        pd.DataFrame({"step": range(len(result.equity_curve)), "equity": result.equity_curve}).to_csv(args.save_equity, index=False)
+        pd.DataFrame(
+            {"step": range(len(result.equity_curve)), "equity": result.equity_curve}
+        ).to_csv(args.save_equity, index=False)
         print(f"[save] Equity -> {args.save_equity}")
 
 

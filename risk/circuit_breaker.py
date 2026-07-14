@@ -85,7 +85,10 @@ class CircuitBreaker:
 
         # ── Check Manual Halt ─────────────────────────────────
         if self.manual_halted:
-            return BreakerState.HALTED, f"Manual halt active: {self.last_halt_reason} (requires manual reset)"
+            return (
+                BreakerState.HALTED,
+                f"Manual halt active: {self.last_halt_reason} (requires manual reset)",
+            )
 
         # ── Daily / Weekly Reset ──────────────────────────────
         today = now // 86400
@@ -112,11 +115,17 @@ class CircuitBreaker:
                 self.state = BreakerState.NORMAL
                 self._warning_bars_remaining = 0
             else:
-                return (BreakerState.WARNING, f"Warning active ({self._warning_bars_remaining} checks remaining)")
+                return (
+                    BreakerState.WARNING,
+                    f"Warning active ({self._warning_bars_remaining} checks remaining)",
+                )
 
         # ── Check pause-until ─────────────────────────────────
         if self.pause_until_ts > 0 and now < self.pause_until_ts:
-            return BreakerState.HALTED, f"Paused until {datetime.fromtimestamp(self.pause_until_ts)}"
+            return (
+                BreakerState.HALTED,
+                f"Paused until {datetime.fromtimestamp(self.pause_until_ts)}",
+            )
 
         # ── Peak Equity Tracking ──────────────────────────────
         if self.peak_equity is None:
@@ -124,24 +133,46 @@ class CircuitBreaker:
         self.peak_equity = max(self.peak_equity, equity)
 
         # ── 1. Max Drawdown ───────────────────────────────────
-        dd = (self.peak_equity - equity) / self.peak_equity if self.peak_equity > 0 else 0
+        dd = (
+            (self.peak_equity - equity) / self.peak_equity
+            if self.peak_equity > 0
+            else 0
+        )
         if dd >= self.max_drawdown_pct:
             return self._halt(f"Max drawdown exceeded: {dd:.1%}")
 
         # ── 2. Daily Loss Limit ───────────────────────────────
-        loss_ref = self.peak_equity if (self.loss_reference == "peak" and self.peak_equity is not None) else self.initial_capital
-        if self.daily_pnl < 0 and abs(self.daily_pnl) / loss_ref >= self.daily_limit_pct:
-            return self._halt(f"Daily loss limit: ${self.daily_pnl:.0f} ({abs(self.daily_pnl)/loss_ref*100:.1f}% of {self.loss_reference})")
+        loss_ref = (
+            self.peak_equity
+            if (self.loss_reference == "peak" and self.peak_equity is not None)
+            else self.initial_capital
+        )
+        if (
+            self.daily_pnl < 0
+            and abs(self.daily_pnl) / loss_ref >= self.daily_limit_pct
+        ):
+            return self._halt(
+                f"Daily loss limit: ${self.daily_pnl:.0f} ({abs(self.daily_pnl) / loss_ref * 100:.1f}% of {self.loss_reference})"
+            )
 
         # ── 3. Weekly Loss Limit ──────────────────────────────
-        if self.weekly_pnl < 0 and abs(self.weekly_pnl) / loss_ref >= self.weekly_limit_pct:
-            return self._halt(f"Weekly loss limit: ${self.weekly_pnl:.0f} ({abs(self.weekly_pnl)/loss_ref*100:.1f}% of {self.loss_reference})")
+        if (
+            self.weekly_pnl < 0
+            and abs(self.weekly_pnl) / loss_ref >= self.weekly_limit_pct
+        ):
+            return self._halt(
+                f"Weekly loss limit: ${self.weekly_pnl:.0f} ({abs(self.weekly_pnl) / loss_ref * 100:.1f}% of {self.loss_reference})"
+            )
 
         # ── 4. Consecutive Losses ─────────────────────────────
         self._count_consecutive(recent_trades_pnl)
         if self.consecutive_losses >= self.consecutive_halt:
             self.manual_halted = True
-            last_pnls = recent_trades_pnl[-self.consecutive_losses:] if len(recent_trades_pnl) >= self.consecutive_losses else recent_trades_pnl
+            last_pnls = (
+                recent_trades_pnl[-self.consecutive_losses :]
+                if len(recent_trades_pnl) >= self.consecutive_losses
+                else recent_trades_pnl
+            )
             last_pnls_str = ", ".join([f"${p:.2f}" for p in last_pnls])
             self.halt_reason = f"{self.consecutive_losses} consecutive losses | Last PnLs: [{last_pnls_str}]"
             self.halt_timestamp = datetime.now()
@@ -151,7 +182,10 @@ class CircuitBreaker:
             # Set counter to number of symbols so WARNING persists for one full candle cycle
             # (check() is called once per symbol per candle)
             self._warning_bars_remaining = max(1, self._warning_bars_remaining)
-            return (BreakerState.WARNING, f"Warning: {self.consecutive_losses} consecutive losses")
+            return (
+                BreakerState.WARNING,
+                f"Warning: {self.consecutive_losses} consecutive losses",
+            )
 
         # ── 5. Volatility Spike ───────────────────────────────
         if avg_atr > 0 and current_atr > 0:

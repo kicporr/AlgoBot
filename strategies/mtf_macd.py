@@ -34,7 +34,7 @@ class MTF_MACD_Elder(BaseStrategy):
 
         # Exit parameters
         exit_cfg = cfg.get("exit", {})
-        self.trailing_stop_pct = exit_cfg.get("trailing_stop_pct", 0.03)   # 3%
+        self.trailing_stop_pct = exit_cfg.get("trailing_stop_pct", 0.03)  # 3%
         self.atr_stop_mult = exit_cfg.get("atr_stop_mult", 2.0)
         self.min_hold_bars = exit_cfg.get("min_hold_bars", 1)
 
@@ -48,14 +48,14 @@ class MTF_MACD_Elder(BaseStrategy):
         self.ic = IndicatorCalculator()
 
         # State
-        self.d1_trend: str = "FLAT"        # "UP", "DOWN", "FLAT"
+        self.d1_trend: str = "FLAT"  # "UP", "DOWN", "FLAT"
         self.d1_macd: float = 0.0
         self.d1_signal: float = 0.0
         self.in_position: bool = False
-        self.position_side: str = ""       # "long" or "short"
+        self.position_side: str = ""  # "long" or "short"
         self.entry_price: float = 0.0
         self.entry_bar: int = 0
-        self.highest_since_entry: float = 0.0   # For long trailing stop
+        self.highest_since_entry: float = 0.0  # For long trailing stop
         self.lowest_since_entry: float = float("inf")  # For short trailing stop
         self._bar_counter: int = 0
 

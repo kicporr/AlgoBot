@@ -8,6 +8,7 @@ Covers:
 
 import sys
 import os
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
@@ -17,7 +18,10 @@ import numpy as np
 
 # ─── Generate realistic OHLCV data ─────────────────────────────
 
-def make_ohlcv(n_bars: int = 500, start_price: float = 50000.0, seed: int = 42) -> pd.DataFrame:
+
+def make_ohlcv(
+    n_bars: int = 500, start_price: float = 50000.0, seed: int = 42
+) -> pd.DataFrame:
     """Generate realistic OHLCV data for testing."""
     rng = np.random.default_rng(seed)
     timestamps = [1_700_000_000_000 + i * 3_600_000 for i in range(n_bars)]
@@ -34,14 +38,16 @@ def make_ohlcv(n_bars: int = 500, start_price: float = 50000.0, seed: int = 42) 
     lows = np.minimum(opens, close) * (1 - rng.uniform(0.001, 0.02, n_bars))
     volumes = rng.uniform(10, 100, n_bars)
 
-    return pd.DataFrame({
-        "timestamp": timestamps,
-        "open": opens,
-        "high": highs,
-        "low": lows,
-        "close": close,
-        "volume": volumes,
-    })
+    return pd.DataFrame(
+        {
+            "timestamp": timestamps,
+            "open": opens,
+            "high": highs,
+            "low": lows,
+            "close": close,
+            "volume": volumes,
+        }
+    )
 
 
 # ─── IndicatorCalculator Tests ─────────────────────────────────
@@ -53,10 +59,14 @@ class TestIndicatorCalculator:
     def setup_method(self):
         self.df = make_ohlcv(300)
         self.o, self.h, self.l, self.c, self.v = (
-            self.df["open"], self.df["high"], self.df["low"],
-            self.df["close"], self.df["volume"],
+            self.df["open"],
+            self.df["high"],
+            self.df["low"],
+            self.df["close"],
+            self.df["volume"],
         )
         from features.indicators import IndicatorCalculator
+
         self.ic = IndicatorCalculator()
 
     def test_sma(self):
@@ -166,14 +176,16 @@ class TestIndicatorCalculator:
 
 
 class TestDerivedFeatures:
-
     def setup_method(self):
         self.df = make_ohlcv(300)
         self.o, self.h, self.l, self.c = (
-            self.df["open"], self.df["high"],
-            self.df["low"], self.df["close"],
+            self.df["open"],
+            self.df["high"],
+            self.df["low"],
+            self.df["close"],
         )
         from features.derived import DerivedFeatures
+
         self.df_util = DerivedFeatures()
 
     def test_detect_patterns_returns_dict(self):
@@ -205,6 +217,7 @@ class TestDerivedFeatures:
 
     def test_rsi_divergence(self):
         from features.indicators import IndicatorCalculator
+
         ic = IndicatorCalculator()
         rsi = ic.rsi(self.c, 14)
         result = self.df_util.rsi_divergence(self.c, rsi, lookback=5)
@@ -215,9 +228,9 @@ class TestDerivedFeatures:
 
 
 class TestFeatureEngine:
-
     def setup_method(self):
         from features.engine import FeatureEngine
+
         config = {"features": {"max_window_bars": 500, "min_bars_required": 50}}
         self.engine = FeatureEngine(config)
 
@@ -226,7 +239,9 @@ class TestFeatureEngine:
         features = self.engine.bulk_compute(df)
         assert isinstance(features, pd.DataFrame)
         assert len(features) == len(df)
-        assert len(features.columns) > 50, f"Expected 60+ features, got {len(features.columns)}"
+        assert len(features.columns) > 50, (
+            f"Expected 60+ features, got {len(features.columns)}"
+        )
 
     def test_bulk_compute_with_multitf(self):
         df_1h = make_ohlcv(300)
@@ -259,8 +274,11 @@ class TestFeatureEngine:
         # Feed one new candle
         new_candle = {
             "timestamp": 1_700_000_000_000 + 100 * 3_600_000,
-            "open": 52000.0, "high": 52200.0, "low": 51800.0,
-            "close": 52100.0, "volume": 50.0,
+            "open": 52000.0,
+            "high": 52200.0,
+            "low": 51800.0,
+            "close": 52100.0,
+            "volume": 50.0,
         }
         features = self.engine.process_candle(new_candle)
         assert isinstance(features, dict)
@@ -270,8 +288,11 @@ class TestFeatureEngine:
         """Without enough bars, should return empty dict."""
         new_candle = {
             "timestamp": 1_700_000_000_000 + 100 * 3_600_000,
-            "open": 52000.0, "high": 52200.0, "low": 51800.0,
-            "close": 52100.0, "volume": 50.0,
+            "open": 52000.0,
+            "high": 52200.0,
+            "low": 51800.0,
+            "close": 52100.0,
+            "volume": 50.0,
         }
         features = self.engine.process_candle(new_candle)
         assert features == {}
@@ -295,7 +316,9 @@ class TestFeatureEngine:
         warm_slice = features.iloc[100:]  # Well past min_bars_required
         for col in warm_slice.columns:
             assert not warm_slice[col].isna().all(), f"Column {col} is all NaN"
-            assert np.isfinite(warm_slice[col].dropna()).all(), f"Column {col} has non-finite values"
+            assert np.isfinite(warm_slice[col].dropna()).all(), (
+                f"Column {col} has non-finite values"
+            )
 
     def test_bulk_compute_no_inf(self):
         """Features should not contain Inf values."""
