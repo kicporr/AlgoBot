@@ -9,7 +9,7 @@ export default function EquityChart({ history }) {
     if (!el || !history?.length) return;
 
     const W = el.parentElement.clientWidth - 16;
-    const H = 220;
+    const H = 240;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     el.width = W * dpr; el.height = H * dpr;
     el.style.width = W + 'px'; el.style.height = H + 'px';

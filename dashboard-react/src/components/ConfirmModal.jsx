@@ -4,8 +4,7 @@ export default function ConfirmModal({ title, message, detail, confirmLabel, dan
   const ref = useRef(null);
 
   useEffect(() => {
-    const el = ref.current;
-    if (el) el.focus();
+    ref.current?.focus();
     const handler = (e) => { if (e.key === 'Escape') onCancel(); };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
@@ -14,17 +13,17 @@ export default function ConfirmModal({ title, message, detail, confirmLabel, dan
   return (
     <div className="modal-backdrop" onClick={onCancel}>
       <div className="modal-box" ref={ref} tabIndex={-1} onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <span className="modal-title">{title}</span>
-          <button className="modal-close" onClick={onCancel}>&times;</button>
+        <div className="modal-hd">
+          <span>{title}</span>
+          <button onClick={onCancel} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: 0 }}>&times;</button>
         </div>
-        <div className="modal-body">
-          <p className="modal-msg">{message}</p>
+        <div className="modal-bd">
+          <p>{message}</p>
           {detail && <p className="modal-detail">{detail}</p>}
         </div>
         <div className="modal-actions">
           <button className="btn" onClick={onCancel}>Cancel</button>
-          <button className={`btn ${danger ? 'btn-danger' : 'btn-primary'}`} onClick={onConfirm}>
+          <button className={`btn ${danger ? 'btn-d' : 'btn-p'}`} onClick={onConfirm}>
             {confirmLabel || 'Confirm'}
           </button>
         </div>
