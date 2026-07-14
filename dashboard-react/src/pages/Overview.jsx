@@ -74,7 +74,7 @@ export default function Overview({ pipeline }) {
         <EquityChart history={risk?.equity_history || []} />
       </div>
       <div className="drag-handle drag-handle-h" ref={chartResize.handleRef} title="Drag to resize chart" />
-      <div className="grid-main" style={{ gridTemplateColumns: `1fr ${sidebarW}px` }}>
+      <div className="grid-main" style={{ gridTemplateColumns: `1fr 4px ${sidebarW}px` }}>
         <div>
           <div className="panel">
             <div className="panel-hd"><span>Positions</span><span className="dim">{(status?.active_positions || []).length} open</span></div>
