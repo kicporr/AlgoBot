@@ -1,106 +1,87 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { fetchStatus, fetchCompare, fetchRisk } from '../api';
-import StatsGrid from '../components/StatsGrid';
+import { fetchStatus, fetchCompare, fetchRisk, postAction } from '../api';
+import StatsBar from '../components/StatsBar';
 import TickerRow from '../components/TickerRow';
 import PositionsTable from '../components/PositionsTable';
 import RecentTrades from '../components/RecentTrades';
 import EquityChart from '../components/EquityChart';
 import CompareView from '../components/CompareView';
-
-function Skeleton({ h = 200 }) {
-  return <div className="skeleton" style={{ height: h }} />;
-}
+import ConfirmModal from '../components/ConfirmModal';
+import { useToast } from '../components/Toast';
 
 export default function Overview({ pipeline }) {
   const [status, setStatus] = useState(null);
   const [compare, setCompare] = useState(null);
   const [risk, setRisk] = useState(null);
   const [loading, setLoading] = useState(true);
-  const prevPipeline = useRef(pipeline);
+  const [modal, setModal] = useState(null);
+  const prev = useRef(pipeline);
+  const toast = useToast();
 
-  // Clear stale data instantly on pipeline switch
+  // Clear stale data on pipeline switch
   useEffect(() => {
-    if (prevPipeline.current !== pipeline) {
-      setStatus(null);
-      setCompare(null);
-      setRisk(null);
-      setLoading(true);
-      prevPipeline.current = pipeline;
-    }
+    if (prev.current !== pipeline) { setStatus(null); setRisk(null); setLoading(true); prev.current = pipeline; }
   }, [pipeline]);
 
-  // Fast poll (positions, tickers): 1.5s
   const fastPoll = useCallback(async () => {
     const s = await fetchStatus(pipeline);
-    setStatus(s);
-    setLoading(false);
+    setStatus(s); setLoading(false);
   }, [pipeline]);
 
-  // Slow poll (analytics, equity): 5s
   const slowPoll = useCallback(async () => {
     const [c, r] = await Promise.all([fetchCompare(), fetchRisk()]);
     setCompare(c); setRisk(r);
   }, []);
 
   useEffect(() => {
-    let fastId, slowId;
-    let cancelled = false;
-
-    const run = async () => {
-      if (cancelled) return;
-      await fastPoll();
-      if (cancelled) return;
-      await slowPoll();
-    };
-    run(); // First fetch: both, immediately
-
-    fastId = setInterval(fastPoll, 1500);
-    slowId = setInterval(slowPoll, 5000);
-
-    return () => { cancelled = true; clearInterval(fastId); clearInterval(slowId); };
+    let c = false, fast, slow;
+    const run = async () => { if (c) return; await fastPoll(); if (!c) await slowPoll(); };
+    run();
+    fast = setInterval(fastPoll, 1500);
+    slow = setInterval(slowPoll, 5000);
+    return () => { c = true; clearInterval(fast); clearInterval(slow); };
   }, [fastPoll, slowPoll]);
 
+  async function doAction(act) {
+    setModal(null);
+    try { const r = await postAction(act); toast(r?.message || 'Done', 'success'); } catch { toast('Failed', 'error'); }
+  }
+
   if (pipeline === 'compare') {
-    return <CompareView compare={compare} />;
+    return <div style={{ padding: 12, overflow: 'auto', height: 'calc(100vh - 100px)' }}><CompareView compare={compare} /></div>;
   }
 
   return (
-    <div className={`page-transition ${loading ? 'loading' : ''}`}>
-      {loading && !status ? (
-        <>
-          <div className="stats-grid">{Array.from({ length: 8 }, (_, i) => <Skeleton key={i} h={76} />)}</div>
-          <Skeleton h={60} />
-        </>
-      ) : (
-        <>
-          <StatsGrid status={status} />
-          <TickerRow tickers={status?.tickers} />
-        </>
+    <>
+      <TickerRow tickers={status?.tickers} />
+      <StatsBar status={status} />
+      <div className="chart-wrap"><EquityChart history={risk?.equity_history || []} /></div>
+      <div className="grid-main">
+        <div>
+          <div className="panel">
+            <div className="panel-hd"><span>Positions</span><span className="dim">{(status?.active_positions || []).length} open</span></div>
+            <div className="panel-bd">
+              <PositionsTable positions={status?.active_positions} btcPrice={status?.btc_price} />
+            </div>
+          </div>
+        </div>
+        <div className="sidebar">
+          <div className="side-panel">
+            <div className="panel-hd">Recent Trades</div>
+            <div className="panel-bd"><RecentTrades pipeline={pipeline} /></div>
+          </div>
+          <div className="side-panel" style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <button className="btn btn-a" onClick={() => setModal({ act: '/reset', title: 'Reset Circuit Breaker', msg: 'Clear all circuit breaker warnings and resume trading.', confirm: 'Reset' })}>Reset CB</button>
+            <button className="btn btn-d" onClick={() => setModal({ act: '/close/all', title: 'Close All Positions', msg: 'Close ALL positions. Unrealized PnL will be realized.', confirm: 'Close All', danger: true })}>Close All</button>
+            <button className="btn btn-d" onClick={() => setModal({ act: '/emergency', title: 'Emergency Stop', msg: 'Stop the bot and close everything. Cannot be undone.', confirm: 'Stop Everything', danger: true })}>E-Stop</button>
+          </div>
+        </div>
+      </div>
+      {modal && (
+        <ConfirmModal title={modal.title} message={modal.msg}
+          confirmLabel={modal.confirm} danger={modal.danger}
+          onConfirm={() => doAction(modal.act)} onCancel={() => setModal(null)} />
       )}
-
-      <div className="grid-2 mb-12">
-        <div className="panel">
-          <div className="panel-header">
-            Positions <span className="dim">{(status?.active_positions || []).length} open</span>
-          </div>
-          <div className="panel-body">
-            {loading && !status ? <Skeleton h={100} /> : <PositionsTable positions={status?.active_positions} btcPrice={status?.btc_price} />}
-          </div>
-        </div>
-        <div className="panel">
-          <div className="panel-header">Recent Trades</div>
-          <div className="panel-body">
-            <RecentTrades pipeline={pipeline} />
-          </div>
-        </div>
-      </div>
-
-      <div className="panel mb-16">
-        <div className="panel-header">Equity Curve</div>
-        <div className="panel-body">
-          {loading && !risk ? <Skeleton h={280} /> : <EquityChart history={risk?.equity_history || []} />}
-        </div>
-      </div>
-    </div>
+    </>
   );
 }
