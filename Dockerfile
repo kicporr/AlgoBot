@@ -40,14 +40,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && ldconfig
 
-# Python deps (runtime-only, no training/backtesting libs)
+# Python deps (minimal runtime set)
 COPY requirements-docker.txt .
 RUN pip install --no-cache-dir -r requirements-docker.txt \
-    && rm -rf /root/.cache/pip \
+    && rm -rf /root/.cache/pip /tmp/* \
     && find /usr/local/lib -name "tests" -type d -exec rm -rf {} + 2>/dev/null || true \
-    && find /usr/local/lib -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+    && find /usr/local/lib -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true \
+    && find /usr/local/lib -name "*.pyc" -delete 2>/dev/null || true \
+    && find /usr/local/lib -name "*.pyo" -delete 2>/dev/null || true
 
-# App code (config + models + scripts)
+# App code (runtime-only modules)
 COPY config/ config/
 COPY models/ models/
 COPY data/ data/
@@ -57,10 +59,8 @@ COPY strategies/ strategies/
 COPY ensemble/ ensemble/
 COPY risk/ risk/
 COPY execution/ execution/
-COPY backtest/ backtest/
 COPY monitoring/ monitoring/
-COPY ml/ ml/
-COPY scripts/ scripts/
+COPY scripts/watchdog.py scripts/
 COPY orchestrator.py .
 COPY __init__.py .
 

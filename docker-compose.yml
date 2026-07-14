@@ -1,16 +1,5 @@
 # ============================================================
-# bocik — Production Docker Compose
-# ============================================================
-#
-# Usage:
-#   docker compose up -d              # Start bot (paper mode)
-#   docker compose up -d --build      # Rebuild + start
-#   docker compose logs -f bot        # Follow bot logs
-#   docker compose ps                 # Check status
-#
-# Live mode:
-#   docker compose run --rm bot python orchestrator.py --mode live
-#
+# bocik — Production Docker Compose (DietPi optimized)
 # ============================================================
 
 version: "3.8"
@@ -18,6 +7,7 @@ version: "3.8"
 services:
   bot:
     build: .
+    image: bocik:latest
     container_name: bocik
     restart: unless-stopped
     env_file:
@@ -36,10 +26,10 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 90s
 
   watchdog:
-    build: .
+    image: bocik:latest
     container_name: bocik-watchdog
     restart: unless-stopped
     command: python scripts/watchdog.py --loop 120
