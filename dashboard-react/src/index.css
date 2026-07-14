@@ -144,7 +144,13 @@ tr:hover td{background:rgba(255,255,255,.008)}
 .btn-a{border-color:var(--accent);color:var(--accent);background:rgba(91,141,238,.08)}
 
 /* ═══════════════ EQUITY CHART ═══════════════ */
-.chart-wrap{height:260px;padding:6px;flex-shrink:0}
+.chart-wrap{padding:6px;flex-shrink:0;overflow:hidden}
+
+/* ═══════════════ DRAG HANDLES ═══════════════ */
+.drag-handle{flex-shrink:0;transition:background .15s;z-index:10}
+.drag-handle:hover,.drag-handle:active{background:var(--accent)}
+.drag-handle-h{height:4px;cursor:ns-resize}
+.drag-handle-v{width:4px;cursor:ew-resize;flex-shrink:0}
 #equity-canvas{width:100%;height:100%;display:block}
 
 /* ═══════════════ MODAL ═══════════════ */

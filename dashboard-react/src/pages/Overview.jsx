@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { fetchStatus, fetchCompare, fetchRisk, postAction } from '../api';
+import { useResizable } from '../hooks/useResizable';
 import StatsBar from '../components/StatsBar';
 import TickerRow from '../components/TickerRow';
 import PositionsTable from '../components/PositionsTable';
@@ -18,7 +19,21 @@ export default function Overview({ pipeline }) {
   const prev = useRef(pipeline);
   const toast = useToast();
 
-  // Clear stale data on pipeline switch
+  // Resizable chart height (vertical)
+  const chartResize = useResizable(248, 120, 500, 'vertical');
+  // Resizable sidebar width (horizontal)
+  const sidebarResize = useResizable(320, 220, 500, 'horizontal');
+
+  const [chartH, setChartH] = useState(248);
+  const [sidebarW, setSidebarW] = useState(320);
+
+  useEffect(() => {
+    const h = chartResize.handleRef.current;
+    const s = sidebarResize.handleRef.current;
+    if (h) h.addEventListener('resize', e => setChartH(e.detail));
+    if (s) s.addEventListener('resize', e => setSidebarW(e.detail));
+  }, []);
+
   useEffect(() => {
     if (prev.current !== pipeline) { setStatus(null); setRisk(null); setLoading(true); prev.current = pipeline; }
   }, [pipeline]);
@@ -55,8 +70,11 @@ export default function Overview({ pipeline }) {
     <>
       <TickerRow tickers={status?.tickers} />
       <StatsBar status={status} />
-      <div className="chart-wrap"><EquityChart history={risk?.equity_history || []} /></div>
-      <div className="grid-main">
+      <div className="chart-wrap" style={{ height: chartH }}>
+        <EquityChart history={risk?.equity_history || []} />
+      </div>
+      <div className="drag-handle drag-handle-h" ref={chartResize.handleRef} title="Drag to resize chart" />
+      <div className="grid-main" style={{ gridTemplateColumns: `1fr ${sidebarW}px` }}>
         <div>
           <div className="panel">
             <div className="panel-hd"><span>Positions</span><span className="dim">{(status?.active_positions || []).length} open</span></div>
@@ -65,6 +83,7 @@ export default function Overview({ pipeline }) {
             </div>
           </div>
         </div>
+        <div className="drag-handle drag-handle-v" ref={sidebarResize.handleRef} title="Drag to resize sidebar" />
         <div className="sidebar">
           <div className="side-panel">
             <div className="panel-hd">Recent Trades</div>
@@ -72,8 +91,8 @@ export default function Overview({ pipeline }) {
           </div>
           <div className="side-panel" style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
             <button className="btn btn-a" onClick={() => setModal({ act: '/reset', title: 'Reset Circuit Breaker', msg: 'Clear all circuit breaker warnings and resume trading.', confirm: 'Reset' })}>Reset CB</button>
-            <button className="btn btn-d" onClick={() => setModal({ act: '/close/all', title: 'Close All Positions', msg: 'Close ALL positions. Unrealized PnL will be realized.', confirm: 'Close All', danger: true })}>Close All</button>
-            <button className="btn btn-d" onClick={() => setModal({ act: '/emergency', title: 'Emergency Stop', msg: 'Stop the bot and close everything. Cannot be undone.', confirm: 'Stop Everything', danger: true })}>E-Stop</button>
+            <button className="btn btn-d" onClick={() => setModal({ act: '/close/all', title: 'Close All Positions', msg: 'Close ALL positions across all symbols. Unrealized PnL will be realized.', confirm: 'Close All', danger: true })}>Close All</button>
+            <button className="btn btn-d" onClick={() => setModal({ act: '/emergency', title: 'Emergency Stop', msg: 'Stop the bot immediately and close all positions. This cannot be undone.', confirm: 'E-Stop', danger: true })}>E-Stop</button>
           </div>
         </div>
       </div>
