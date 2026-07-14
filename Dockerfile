@@ -42,7 +42,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Python deps (runtime-only, no training/backtesting libs)
 COPY requirements-docker.txt .
-RUN pip install --no-cache-dir -r requirements-docker.txt
+RUN pip install --no-cache-dir -r requirements-docker.txt \
+    && rm -rf /root/.cache/pip \
+    && find /usr/local/lib -name "tests" -type d -exec rm -rf {} + 2>/dev/null || true \
+    && find /usr/local/lib -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 
 # App code (config + models + scripts)
 COPY config/ config/
